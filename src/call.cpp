@@ -2819,9 +2819,18 @@ bool call::process_incoming(const char* msg, const struct sockaddr_storage* src)
     }
 
 #ifdef RTP_STREAM
-    /* Check if message has a SDP in it; and extract media information. */
-    if (!strcmp(get_header_content(msg, "Content-Type:"), "application/sdp") &&
-            hasMedia == 1 && !curmsg->ignoresdp) {
+    
+    TRACE_MSG("[TESTDEBUG]Content-Type:%s\n", get_header_content(msg, "Content-Type:"));
+    TRACE_MSG("[TESTDEBUG]strcmp=%d\n", strncmp(get_header_content(msg, "Content-Type:"), "multipart/mixed;", strlen("multipart/mixed;")));
+
+    if (!strncmp(get_header_content(msg, "Content-Type:"), "multipart/mixed;", strlen("multipart/mixed;")) && hasMedia == 1 && !curmsg->ignoresdp) {
+        TRACE_MSG("[TESTDEBUG]go rtp\n");
+        const char* ptr = get_header_content(msg, "Content-Length:");
+        if (ptr && atoll(ptr) > 0) {
+            extract_rtp_remote_addr(msg);
+        }
+    }
+    else if (!strcmp(get_header_content(msg, "Content-Type:"), "application/sdp") && hasMedia == 1 && !curmsg->ignoresdp) {
         const char* ptr = get_header_content(msg, "Content-Length:");
         if (ptr && atoll(ptr) > 0) {
             extract_rtp_remote_addr(msg);

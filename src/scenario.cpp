@@ -30,10 +30,12 @@
 #include <stdlib.h>
 #include "config.h"
 #include "sipp.hpp"
+#include "mbcp.hpp"
 #ifdef HAVE_GSL
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 #include <gsl/gsl_cdf.h>
+
 #endif
 
 /************************ Class Constructor *************************/
@@ -652,6 +654,7 @@ void scenario::checkOptionalRecv(char *elem, unsigned int scenario_file_cursor)
 
 scenario::scenario(char * filename, int deflt)
 {
+    
     char * elem;
     char *method_list = NULL;
     unsigned int scenario_file_cursor = 0;
@@ -699,7 +702,55 @@ scenario::scenario(char * filename, int deflt)
         char * ptr;
         scenario_file_cursor ++;
 
-        if(!strcmp(elem, "CallLengthRepartition")) {
+        if(!strcmp(elem, "send_mbcp")){
+            printf("\n\n\n\n\n\n\n\n\n\n nmbcp nmbcp  nmbcp \n\n\n\n\n\n\n\n");
+            ptr = xp_get_string("port", "mbcp listen port");
+            printf("port:%s\n", ptr);
+            free(ptr);
+            if((cptr = xp_get_value("message"))) {
+                printf("message:%s\n", cptr);
+            }
+            ptr = xp_get_string("test", "mbcp test");
+            printf("test:%s\n", ptr);
+            free(ptr);
+            MBCP testMbcp;
+            MBCP_IDLE idleMBCP;
+            idleMBCP.SetSequenceNumber(12345);
+            idleMBCP.SetIndicator('C');
+            idleMBCP.Encode();
+            printf("%s\n", idleMBCP.GetDump().c_str());
+            MBCP_IDLE idleMBCP2;
+            idleMBCP2.SetSequenceNumber(1000);
+            idleMBCP2.SetIndicator('A');
+            MBCP *test = (MBCP *)&idleMBCP2;
+            test->Encode();
+            printf("%s\n", test->GetDump().c_str());
+
+
+
+            MBCP_GRANTED testTaken;
+            testTaken.SetDuration(1);
+            testTaken.SetPriority(2);
+            testTaken.SetUserId("Jdin@j-din.com");
+            testTaken.Encode();
+            printf("Taken dump : %s\n", testTaken.GetDump().c_str());
+
+
+            MBCP_DENY testDeny;
+            testDeny.SetRejectCause(100);
+            testDeny.SetUserId("testDeny@j-din.com");
+            testDeny.SetIndicator('H');
+            testDeny.Encode();
+            printf("Deny dump : %s\n", testDeny.GetDump().c_str());
+
+            MBCP_REVOKE testRevoke;
+            testRevoke.SetRejectCause(1000);
+            testRevoke.SetIndicator('E');
+            testRevoke.Encode();
+            printf("testRevoke dump : %s\n", testRevoke.GetDump().c_str());
+
+        }
+        else if(!strcmp(elem, "CallLengthRepartition")) {
             ptr = xp_get_string("value", "CallLengthRepartition");
             stats->setRepartitionCallLength(ptr);
             free(ptr);
