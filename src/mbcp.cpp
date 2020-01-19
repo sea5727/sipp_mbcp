@@ -1,15 +1,39 @@
+#include <stdio.h>
 #include <string.h>
+#include "sipp.hpp"
 #include "mbcp.h"
 #include "mbcp.hpp"
 #include "memory"
 
+int MBCP::test = 10;
+//MBCP::FactoryMbcp* MBCP::FactoryMbcp::instance = NULL;
+// MBCP::FactoryMbcp* MBCP::FactoryMbcp::Instance();
+
+
 MBCP::MBCP()
 {
+	memset(&this->pstMsg, 0x00, sizeof(this->pstMsg));
+	memset(this->pcBuf , 0x00, sizeof(this->pcBuf));
+	this->nMsgName = -1;
+	this->nBufLen = 0;
+}
+MBCP::MBCP(char* szBuf, int nBufLen){
+	memset(&this->pstMsg, 0x00, sizeof(this->pstMsg));
+	memset(this->pcBuf , 0x00, sizeof(this->pcBuf));
+	this->nMsgName = -1;
+	this->nBufLen = 0;
+
+	memcpy(this->pcBuf, (void*)szBuf, nBufLen);
+	this->nBufLen = nBufLen;
+	int ret = Decode();
+	if(ret < 0)
+		printf("MBCP unkowns message\n");
 }
 MBCP::~MBCP()
 {
 
 }
+
 void MBCP::Make_SSRC( unsigned char *dest, int len )
 {
 	int i;
@@ -36,24 +60,939 @@ void MBCP::Set_MBCPHeader(_MBCP_HEADER *pstHeader, int nSubType, uint32_t unLoca
 	memcpy(pstHeader->cName, "MCPT", 4);
 }
 
+int MBCP::Decode(){
+	return Decode(&this->pstMsg, this->pcBuf, this->nBufLen);
+}
+int MBCP::Decode(_MBCP_MSG *pstMsg, char *pcBuf, int nLen)
+{
+    int nOffset = 0;
+    int nRet = FAIL;
+
+    nOffset = __Decode_Header(pcBuf, pstMsg);
+    //FIXME Offset 체크한번 하면 좋을듯
+
+    pstMsg->nMsgName = pstMsg->stHeader.subtype;
+	this->nMsgName = pstMsg->nMsgName;
+
+    if(pstMsg->stHeader.subtype & 0x10){
+        pstMsg->nAckFlag = ON;
+    }
+
+	TRACE_MSG("Decoder.. msgName=%d\n",pstMsg->nMsgName);
+    switch(pstMsg->nMsgName){
+		case MBCP_FLOOR_IDLE:
+		{
+			TRACE_MSG("Decoder.. START IDLE\n");
+			nRet = __Floor_Idle_Decoder(pcBuf + nOffset, pstMsg, nLen);
+			TRACE_MSG("Decoder.. START IDLE ret=%d\n",nRet);
+			break;
+		}
+		case MBCP_FLOOR_TAKEN:
+		{
+			nRet = __Floor_Taken_Decoder(pcBuf + nOffset, pstMsg, nLen);
+			break;
+		}
+		case MBCP_FLOOR_GRANTED:
+		{
+			nRet = __Floor_Granted_Decoder(pcBuf + nOffset, pstMsg, nLen);
+			break;
+		}
+		case MBCP_FLOOR_DENY:
+		{
+			nRet = __Floor_Deny_Decoder(pcBuf + nOffset, pstMsg, nLen);
+			break;
+		}
+		case MBCP_FLOOR_QUEUE_POSITION_INFO:
+		{
+			nRet = __Floor_Queue_Position_Info_Decoder(pcBuf + nOffset, pstMsg, nLen);
+			break;
+		}
+		case MBCP_FLOOR_REVOKE:
+		{
+			nRet = __Floor_Revoke_Decoder(pcBuf + nOffset, pstMsg, nLen);
+			break;
+		}
+        case MBCP_FLOOR_REQUEST:
+        {
+            nRet = SIM_Floor_Request_Decoder(pcBuf + nOffset, pstMsg, nLen);
+            break;
+        }
+
+        case MBCP_FLOOR_RELEASE:
+        {
+            nRet = SIM_Floor_Release_Decoder(pcBuf + nOffset, pstMsg, nLen);
+            break;
+        }
+
+        case MBCP_FLOOR_ACK:
+        {
+            nRet = SIM_Ack_Decoder(pcBuf + nOffset, pstMsg, nLen);
+            break;
+        }
+
+        case MBCP_FLOOR_QUEUE_POSITION_REQUEST:
+        {
+            nRet = SIM_Floor_Queue_Position_Request_Decoder(pcBuf + nOffset, pstMsg, nLen);
+            break;
+        }
+
+        default:{
+            printf("[MBCP] Unknown Message Name (%d) (%s_%d)\n", pstMsg->nMsgName, __func__, __LINE__);
+            return nRet;
+        }
+    }
+
+    return nRet;
+}
+
+// Floor Idle. -------------------------------------------------------------------------------------------------------------//
+int MBCP::__Floor_Idle_Decoder(char *pcBuf, _MBCP_MSG *pstMsg, int nLen){
+	int nOffset = 0;
+
+	_MBCP_Floor_Idle *pstIdleMsg = &pstMsg->stPayload.stFloor_Idle;
+	char *ptr = pcBuf;
+
+	int nDecoderLen = 0;
+
+	while(nDecoderLen < nLen){
+		unsigned char ucField = 0x00;
+		ucField = ptr[nOffset];
+		TRACE_MSG("ucField=%d\n", ucField);
+		switch(ucField){
+			case MBCP_Field_Message_Sequence_Number:
+			{
+				_MBCP_MSG_SEQ_NUMBER *pstSeqNum = &pstIdleMsg->SeqNum;
+				nOffset += __Decode_Message_Sequence_Number(ptr + nOffset, pstSeqNum);
+				break;
+			}
+			case MBCP_Field_Track_Info:
+			{
+				_MBCP_TRACK_INFO *pstTrackInfo = &pstIdleMsg->Track_Info;
+				nOffset += __Decode_TrackInfo(ptr + nOffset, pstTrackInfo);
+				break;
+			}
+			case MBCP_Field_Floor_Indicator:
+			{
+				_MBCP_FLOOR_INDICATOR *pstIndicator = &pstIdleMsg->Indicator;
+				nOffset += __Decode_Indicator(ptr + nOffset, pstIndicator);
+				break;
+			}
+			default:{
+				return FAIL;
+			}
+		}
+
+		nDecoderLen = MBCP_MAX_HD_LEN + nOffset;
+	}
+
+	nOffset += nDecoderLen;
+	return SUCC;
+}
+int MBCP::__Floor_Taken_Decoder(char *pcBuf, _MBCP_MSG *pstMsg, int nLen){
+	int nOffset = 0;
+
+	_MBCP_Floor_Taken *pstTakenMsg = &pstMsg->stPayload.stFloor_Taken;
+	char *ptr = pcBuf;
+
+	int nDecoderLen = 0;
+
+	while(nDecoderLen < nLen){
+		unsigned char ucField = 0x00;
+		ucField = ptr[nOffset];
+
+		switch(ucField){
+			case MBCP_Field_Granted_party_Identity:
+			{
+				_MBCP_GRANT_PARTY_IDENTITY *pstGrantedPartyIdentity = &pstTakenMsg->Grant_party_Identity;
+				nOffset += __Decode_Granted_Party_Identity_Field(ptr + nOffset, pstGrantedPartyIdentity);
+				break;
+			}
+			case MBCP_Field_Permission_Request:
+			{
+				_MBCP_PERMISSION_REQUEST_FLOOR_FIELD *pstPermissionReq = &pstTakenMsg->Grant_Permission_Req;
+				nOffset += __Decode_Permission_to_Request(ptr + nOffset, pstPermissionReq);
+				break;
+			}
+			case MBCP_Field_User_ID:
+			{
+				_MBCP_USER_ID *pstUserId = &pstTakenMsg->UserID;
+				nOffset += __Decode_UserID(ptr + nOffset, pstUserId);
+				break;
+			}
+			case MBCP_Field_Message_Sequence_Number:
+			{
+				_MBCP_MSG_SEQ_NUMBER *pstSeqNum = &pstTakenMsg->SeqNum;
+				nOffset += __Decode_Message_Sequence_Number(ptr + nOffset, pstSeqNum);
+				break;
+			}
+			case MBCP_Field_Track_Info:
+			{
+				_MBCP_TRACK_INFO *pstTrackInfo = &pstTakenMsg->Track_Info;
+				nOffset += __Decode_TrackInfo(ptr + nOffset, pstTrackInfo);
+				break;
+			}
+			case MBCP_Field_Floor_Indicator:
+			{
+				_MBCP_FLOOR_INDICATOR *pstIndicator = &pstTakenMsg->Indicator;
+				nOffset += __Decode_Indicator(ptr + nOffset, pstIndicator);
+				break;
+			}
+			default:{
+				return FAIL;
+			}
+		}
+
+		nDecoderLen = MBCP_MAX_HD_LEN + nOffset;
+	}
+
+	nOffset += nDecoderLen;
+
+	return SUCC;
+}
+int MBCP::__Floor_Granted_Decoder(char *pcBuf, _MBCP_MSG *pstMsg, int nLen){
+	int nOffset = 0;
+
+	_MBCP_Floor_Granted*pstGrantedMsg = &pstMsg->stPayload.stFloor_Granted;
+	char *ptr = pcBuf;
+
+	int nDecoderLen = 0;
+
+	while(nDecoderLen < nLen){
+		unsigned char ucField = 0x00;
+		ucField = ptr[nOffset];
+		TRACE_MSG("Grandted Decoder .. ucField=%d\n", ucField);
+		switch(ucField){
+			case MBCP_Field_Duration:
+			{
+				_MBCP_FLOOR_DURATION *pstDuration = &pstGrantedMsg->Duration;
+				nOffset += __Decode_Duration(ptr + nOffset, pstDuration);
+				break;
+			}
+			case MBCP_Field_Floor_Priority:
+			{
+				_MBCP_FLOOR_PRIORITY*pstPriority = &pstGrantedMsg->Priority;
+				nOffset += __Decode_Priority(ptr + nOffset, pstPriority);
+				break;
+			}
+			case MBCP_Field_User_ID:
+			{
+				_MBCP_USER_ID *pstUserId = &pstGrantedMsg->UserID;
+				nOffset += __Decode_UserID(ptr + nOffset, pstUserId);
+				break;
+			}
+			case MBCP_Field_Queue_Size:
+			{
+				TRACE_MSG("Granted.. Decode..Queue Size\n");
+				_MBCP_QUEUE_SIZE *pstQueueSize = &pstGrantedMsg->QueueSize;
+				nOffset += __Decode_Queue_Size(ptr + nOffset, pstQueueSize);
+				break;
+			}
+			case MBCP_Field_Queued_User_ID:
+			{
+				_MBCP_QUEUE_USER_ID *pstQueueUserID = &pstGrantedMsg->QueueUserID;
+				nOffset += __Decode_Queue_UserID(ptr + nOffset, pstQueueUserID);
+				break;
+			}
+			case MBCP_Field_Queue_Info:
+			{
+				_MBCP_FLOOR_QUEUEINFO *pstQueueInfo = &pstGrantedMsg->QueueInfo;
+				nOffset += __Decode_Queue_Info(ptr + nOffset, pstQueueInfo);
+				break;
+			}
+			case MBCP_Field_Track_Info:
+			{
+				_MBCP_TRACK_INFO *pstTrackInfo = &pstGrantedMsg->Track_Info;
+				nOffset += __Decode_TrackInfo(ptr + nOffset, pstTrackInfo);
+				break;
+			}
+			case MBCP_Field_Floor_Indicator:
+			{
+				_MBCP_FLOOR_INDICATOR *pstIndicator = &pstGrantedMsg->Indicator;
+				nOffset += __Decode_Indicator(ptr + nOffset, pstIndicator);
+				break;
+			}
+			default:{
+				return FAIL;
+			}
+		}
+
+		nDecoderLen = MBCP_MAX_HD_LEN + nOffset;
+	}
+
+	nOffset += nDecoderLen;
+
+	return SUCC;
+}
+int MBCP::__Floor_Deny_Decoder(char *pcBuf, _MBCP_MSG *pstMsg, int nLen){
+	int nOffset = 0;
+
+	_MBCP_Floor_Deny*pstDenyMsg = &pstMsg->stPayload.stFloor_Deny;
+	char *ptr = pcBuf;
+
+	int nDecoderLen = 0;
+	TRACE_MSG("[TESTDEBUG] START DENY... bbUserId=%d\n", pstDenyMsg->UserID.bUserID);
+	while(nDecoderLen < nLen){
+		unsigned char ucField = 0x00;
+		ucField = ptr[nOffset];
+		switch(ucField){
+			case MBCP_Field_Reject_Cause:
+			{
+				_MBCP_FLOOR_REJECTCAUSE *pstRejectCause = &pstDenyMsg->RejectCause;
+				nOffset += __Decode_RejectCause(ptr + nOffset, pstRejectCause);
+				break;
+			}
+			case MBCP_Field_User_ID:
+			{
+				_MBCP_USER_ID *pstUserID = &pstDenyMsg->UserID;
+				nOffset += __Decode_UserID(ptr + nOffset, pstUserID);
+				break;
+			}
+			case MBCP_Field_Track_Info:
+			{
+				_MBCP_TRACK_INFO *pstTrackInfo = &pstDenyMsg->Track_Info;
+				nOffset += __Decode_TrackInfo(ptr + nOffset, pstTrackInfo);
+				break;
+			}
+			case MBCP_Field_Floor_Indicator:
+			{
+				_MBCP_FLOOR_INDICATOR *pstIndicator = &pstDenyMsg->Indicator;
+				nOffset += __Decode_Indicator(ptr + nOffset, pstIndicator);
+				break;
+			}
+			default:{
+				return FAIL;
+			}
+		}
+
+		nDecoderLen = MBCP_MAX_HD_LEN + nOffset;
+	}
+
+	TRACE_MSG("[TESTDEBUG] DENY... bbUserId=%d\n", pstDenyMsg->UserID.bUserID);
+	nOffset += nDecoderLen;
+
+	return SUCC;
+}
+int MBCP::__Floor_Queue_Position_Info_Decoder(char *pcBuf, _MBCP_MSG *pstMsg, int nLen){
+	int nOffset = 0;
+
+	_MBCP_Floor_Queue_Position_Info*pstQueuePositionInfoMsg = &pstMsg->stPayload.stFloor_Q_Position_Info;
+	char *ptr = pcBuf;
+
+	int nDecoderLen = 0;
+
+	while(nDecoderLen < nLen){
+		unsigned char ucField = 0x00;
+		ucField = ptr[nOffset];
+
+		switch(ucField){
+			case MBCP_Field_User_ID:
+			{
+				_MBCP_USER_ID *pstUserID = &pstQueuePositionInfoMsg->UserID;
+				nOffset += __Decode_UserID(ptr + nOffset, pstUserID);
+				break;
+			}
+			case MBCP_Field_Queued_User_ID:
+			{
+				_MBCP_QUEUE_USER_ID *pstQueueUserID = &pstQueuePositionInfoMsg->QueueUserID;
+				nOffset += __Decode_Queue_UserID(ptr + nOffset, pstQueueUserID);
+				break;
+			}
+			case MBCP_Field_Queue_Info:
+			{
+				_MBCP_FLOOR_QUEUEINFO *pstQueueInfo = &pstQueuePositionInfoMsg->QueueInfo;
+				nOffset += __Decode_Queue_Info(ptr + nOffset, pstQueueInfo);
+				break;
+			}
+			case MBCP_Field_Track_Info:
+			{
+				_MBCP_TRACK_INFO *pstTrackInfo = &pstQueuePositionInfoMsg->Track_Info;
+				nOffset += __Decode_TrackInfo(ptr + nOffset, pstTrackInfo);
+				break;
+			}
+			case MBCP_Field_Floor_Indicator:
+			{
+				_MBCP_FLOOR_INDICATOR *pstIndicator = &pstQueuePositionInfoMsg->Indicator;
+				nOffset += __Decode_Indicator(ptr + nOffset, pstIndicator);
+				break;
+			}
+			default:{
+				return FAIL;
+			}
+		}
+
+		nDecoderLen = MBCP_MAX_HD_LEN + nOffset;
+	}
+
+	nOffset += nDecoderLen;
+
+	return SUCC;
+}
+int MBCP::__Floor_Revoke_Decoder(char *pcBuf, _MBCP_MSG *pstMsg, int nLen){
+	int nOffset = 0;
+
+	_MBCP_Floor_Revoke*pstRevokeMsg = &pstMsg->stPayload.stFloor_Revoke;
+	char *ptr = pcBuf;
+
+	int nDecoderLen = 0;
+
+	while(nDecoderLen < nLen){
+		unsigned char ucField = 0x00;
+		ucField = ptr[nOffset];
+
+		switch(ucField){
+			case MBCP_Field_Reject_Cause:
+			{
+				_MBCP_FLOOR_REJECTCAUSE *pstRejectCause = &pstRevokeMsg->RejectCause;
+				nOffset += __Decode_RejectCause(ptr + nOffset, pstRejectCause);
+				break;
+			}
+			case MBCP_Field_Track_Info:
+			{
+				_MBCP_TRACK_INFO *pstTrackInfo = &pstRevokeMsg->Track_Info;
+				nOffset += __Decode_TrackInfo(ptr + nOffset, pstTrackInfo);
+				break;
+			}
+			case MBCP_Field_Floor_Indicator:
+			{
+				_MBCP_FLOOR_INDICATOR *pstIndicator = &pstRevokeMsg->Indicator;
+				nOffset += __Decode_Indicator(ptr + nOffset, pstIndicator);
+				break;
+			}
+			default:{
+				return FAIL;
+			}
+		}
+
+		nDecoderLen = MBCP_MAX_HD_LEN + nOffset;
+	}
+
+	nOffset += nDecoderLen;
+
+	return SUCC;
+}
+int MBCP::SIM_Floor_Request_Decoder(char *pcBuf, _MBCP_MSG *pstMBCPMsg, int nLen)
+{
+	int nOffset = 0;
+
+	_MBCP_Floor_Request *pstMsg = &pstMBCPMsg->stPayload.stFloor_Req;
+	char *ptr = pcBuf;
+
+	int nDecoderLen = 0;
+
+
+	nDecoderLen = MBCP_MAX_HD_LEN + nOffset;
+	while(nDecoderLen < nLen){
+		unsigned char ucField = 0x00;
+		ucField = ptr[nOffset];
+		TRACE_MSG("REQUEST while start.. ucField:%d..nOffset:%d ..nDecoderLen:%d <?  nLen:%d\n", ucField, nOffset, nDecoderLen, nLen);
+		switch(ucField){
+			case MBCP_Field_Floor_Priority:
+				{
+					TRACE_MSG("REQUEST.. Priority..\n");
+					_MBCP_FLOOR_PRIORITY *pstPriority = &pstMsg->priority;
+					nOffset += __Decode_Priority(ptr + nOffset, pstPriority);
+					break;
+				}
+			case MBCP_Field_User_ID:
+				{
+					TRACE_MSG("REQUEST.. UserId..\n");
+					_MBCP_USER_ID *pstUserId = &pstMsg->UserID;
+					nOffset += __Decode_UserID(ptr + nOffset, pstUserId);
+					break;
+				}
+			case MBCP_Field_Track_Info:
+				{
+					TRACE_MSG("REQUEST.. TrackInfo..\n");
+					_MBCP_TRACK_INFO *pstTrackInfo = &pstMsg->Track_Info;
+					nOffset += __Decode_TrackInfo(ptr + nOffset, pstTrackInfo);
+					break;
+				}
+			case MBCP_Field_Floor_Indicator:
+				{
+					TRACE_MSG("REQUEST.. Indicator..\n");
+					_MBCP_FLOOR_INDICATOR *pstIndicator = &pstMsg->Indicator;
+					nOffset += __Decode_Indicator(ptr + nOffset, pstIndicator);
+					break;
+				}
+			default:{
+						printf("Unknown MBCP Field(%d) (%s_%d)\n", ucField, __func__, __LINE__);
+						return FAIL;
+					}
+		}
+		nDecoderLen = MBCP_MAX_HD_LEN + nOffset;
+		TRACE_MSG("REQUEST..WHILE END ucField:%d..nOffset:%d ..nDecoderLen:%d <?  nLen:%d\n", ucField, nOffset, nDecoderLen, nLen);
+	}
+
+	nOffset += nDecoderLen;
+	return SUCC;
+}
+
+int MBCP::SIM_Floor_Release_Decoder(char *pcBuf, _MBCP_MSG *pstMBCPMsg, int nLen)
+{
+	int nOffset = 0;
+
+	_MBCP_Floor_Release *pstMsg = &pstMBCPMsg->stPayload.stFloor_Release;
+	char *ptr = pcBuf;
+
+	int nDecoderLen = 0;
+
+	while(nDecoderLen < nLen){
+		unsigned char ucField = 0x00;
+		ucField = ptr[nOffset];
+
+		switch(ucField){
+			case MBCP_Field_User_ID:
+				{
+					_MBCP_USER_ID *pstUserId = &pstMsg->UserID;
+					nOffset += __Decode_UserID(ptr + nOffset, pstUserId);
+					break;
+				}
+			case MBCP_Field_Track_Info:
+				{
+					_MBCP_TRACK_INFO *pstTrackInfo = &pstMsg->Track_Info;
+					nOffset += __Decode_TrackInfo(ptr + nOffset, pstTrackInfo);
+					break;
+				}
+			case MBCP_Field_Floor_Indicator:
+				{
+					_MBCP_FLOOR_INDICATOR *pstIndicator = &pstMsg->Indicator;
+					nOffset += __Decode_Indicator(ptr + nOffset, pstIndicator);
+					break;
+				}
+			default:{
+						printf("Unknown MBCP Field(%d) (%s_%d)\n", ucField, __func__, __LINE__);
+						return FAIL;
+					}
+		}
+
+		nDecoderLen = MBCP_MAX_HD_LEN + nOffset;
+	}
+
+	nOffset += nDecoderLen;
+	return SUCC;
+}
+
+int MBCP::SIM_Ack_Decoder(char *pcBuf, _MBCP_MSG *pstMBCPMsg, int nLen)
+{
+	int nOffset = 0;
+
+	_MBCP_Ack *pstMsg = &pstMBCPMsg->stPayload.stAck;
+	char *ptr = pcBuf;
+
+	int nDecoderLen = 0;
+
+	while(nDecoderLen < nLen){
+		unsigned char ucField = 0x00;
+		ucField = ptr[nOffset];
+
+		switch(ucField){
+			case MBCP_Field_Source:
+				{
+					_MBCP_SOURCE *pstSource = &pstMsg->Source;
+					nOffset += __Decode_SourceField(ptr + nOffset, pstSource);
+					break;
+				}
+			case MBCP_Field_Message_Type:
+				{
+					_MBCP_MSG_TYPE *pstMsgType = &pstMsg->MsgType;
+					nOffset += __Decode_MsgType(ptr + nOffset, pstMsgType);
+					break;
+				}
+			case MBCP_Field_Track_Info:
+				{
+					_MBCP_TRACK_INFO *pstTrackInfo = &pstMsg->Track_Info;
+					nOffset += __Decode_TrackInfo(ptr + nOffset, pstTrackInfo);
+					break;
+				}
+			default:{
+						printf("Unknown MBCP Field(%d) (%s_%d)\n", ucField, __func__, __LINE__);
+						return FAIL;
+					}
+		}
+
+		nDecoderLen = MBCP_MAX_HD_LEN + nOffset;
+	}
+
+	nOffset += nDecoderLen;
+	return SUCC;
+}
+
+int MBCP::SIM_Floor_Queue_Position_Request_Decoder(char *pcBuf, _MBCP_MSG *pstMBCPMsg, int nLen)
+{
+	int nOffset = 0;
+
+	_MBCP_Floor_Queue_Position_Req *pstMsg = &pstMBCPMsg->stPayload.stFloor_Q_Position_Req;
+	char *ptr = pcBuf;
+
+	int nDecoderLen = 0;
+
+	while(nDecoderLen < nLen){
+		unsigned char ucField = 0x00;
+		ucField = ptr[nOffset];
+
+		switch(ucField){
+			case MBCP_Field_User_ID:
+				{
+					_MBCP_USER_ID *pstUserId = &pstMsg->UserID;
+					nOffset += __Decode_UserID(ptr + nOffset, pstUserId);
+					break;
+				}
+			case MBCP_Field_Track_Info:
+				{
+					_MBCP_TRACK_INFO *pstTrackInfo = &pstMsg->Track_Info;
+					nOffset += __Decode_TrackInfo(ptr + nOffset, pstTrackInfo);
+					break;
+				}
+			default:{
+						printf("Unknown MBCP Field(%d) (%s_%d)\n", ucField, __func__, __LINE__);
+						return FAIL;
+					}
+		}
+
+		nDecoderLen = MBCP_MAX_HD_LEN + nOffset;
+	}
+
+	nOffset += nDecoderLen;
+	return SUCC;
+}
+
+
+
+/// Field Decoder ===========================================================================================///
+// Priority Field -------------------------------------------------------------------------------------------------------------------//
+int MBCP::__Decode_Priority(char* pBuf, _MBCP_FLOOR_PRIORITY *pstPriority){
+	int nIdx = 0;
+	nIdx += 2; //Field ID + LenValue
+	pstPriority->nPriority = pBuf[nIdx]; nIdx += 1;
+	pstPriority->bPriority = TRUE;
+	nIdx += 1; //Spare
+	TRACE_MSG("Decode Priority return value=%d\n", nIdx);
+	return nIdx;
+}
+//-------------------------------------------------------------------------------------------------------------- Priority Field End.//
+
+// Duration Field ------------------------------------------------------------------------------------------------------------------//
+int MBCP::__Decode_Duration(char* pBuf, _MBCP_FLOOR_DURATION *pstDuration){
+	int nIdx = 0;
+	nIdx += 2; //Field ID + LenValue
+	pstDuration->nDuration = GET_16(pBuf + 2); nIdx += 2;
+	pstDuration->bDuration = TRUE;
+
+    return nIdx;
+}
+//------------------------------------------------------------------------------------------------------------- Duration Field End.//
+
+// Reject Cause Field -------------------------------------------------------------------------------------------------------------//
+int MBCP::__Decode_RejectCause(char* pBuf, _MBCP_FLOOR_REJECTCAUSE *pstRejectCause){
+	int nIdx = 0;
+	nIdx += 1; //Field ID
+	int nReject_CauseLen = pBuf[nIdx]; nIdx += 1;
+	pstRejectCause->nReject_Cause = GET_16(pBuf + nIdx); nIdx += 2;
+	strncpy(pstRejectCause->cReject_Cause, pBuf + nIdx, nReject_CauseLen);
+	pstRejectCause->cReject_Cause[nReject_CauseLen] = '\0';
+	nIdx = ALIGN_LEN4(strlen(pstRejectCause->cReject_Cause) + nIdx);
+	pstRejectCause->bRejectCause = TRUE;
+
+    return nIdx;
+}
+//-------------------------------------------------------------------------------------------------------- Reject Cause Field End.//
+
+// Queue Info Field ---------------------------------------------------------------------------------------------------------------//
+int MBCP::__Decode_Queue_Info(char* pBuf, _MBCP_FLOOR_QUEUEINFO *pstQueueInfo){
+	int nIdx = 0;
+	nIdx += 2; //Field ID + LenValue
+	pstQueueInfo->nQueue_Postion_Info = pBuf[nIdx]; nIdx += 1;
+	pstQueueInfo->nQueue_Priority_Level = pBuf[nIdx]; nIdx += 1;
+	pstQueueInfo->bQUserInfo = TRUE;
+
+    return nIdx;
+}
+//---------------------------------------------------------------------------------------------------------- Queue Info Field End.//
+
+// Granted Party's Identity Field -------------------------------------------------------------------------------------------------//
+int MBCP::__Decode_Granted_Party_Identity_Field(char* pBuf, _MBCP_GRANT_PARTY_IDENTITY *pstGranted_Party_Identity){
+	int nIdx = 0;
+	nIdx += 1; //Field ID
+	int nGrant_party_IdentityLen = pBuf[nIdx]; nIdx += 1;
+	strncpy(pstGranted_Party_Identity->cGrant_party_Identity, pBuf + nIdx, nGrant_party_IdentityLen);
+	pstGranted_Party_Identity->cGrant_party_Identity[nGrant_party_IdentityLen] = '\0';
+	nIdx = ALIGN_LEN4(strlen(pstGranted_Party_Identity->cGrant_party_Identity) + nIdx);
+	pstGranted_Party_Identity->bGrant_party_Identity = TRUE;
+
+    return nIdx;
+}
+//-------------------------------------------------------------------------------------------- Granted Party's Identity Field End.//
+
+// Permission to Request Field ---------------------------------------------------------------------------------------------------//
+int MBCP::__Decode_Permission_to_Request(char* pBuf, _MBCP_PERMISSION_REQUEST_FLOOR_FIELD *pstPermissionReq){
+	int nIdx = 0;
+	nIdx += 2; //Field ID + LenValue
+	pstPermissionReq->nPermission_Request_Floor_Value = GET_16(pBuf + nIdx); nIdx += 2;
+	pstPermissionReq->bPermission_Request_Floor_Value = TRUE;
+
+	return nIdx;
+}
+//---------------------------------------------------------------------------------------------- Permission to Request Field End.//
+
+// User ID Field -------------------------------------------------------------------------------------------------------------------//
+int MBCP::__Decode_UserID(char* pBuf, _MBCP_USER_ID *pstUserID){
+	int nIdx = 0;
+	nIdx += 1; //Field ID
+	int nUserIDLen = pBuf[1]; nIdx += 1;
+	TRACE_MSG("nUserIDLen:%d, nIdx:%d\n", nUserIDLen, nIdx);
+
+	strncpy(pstUserID->cUserID, pBuf + nIdx, nUserIDLen); 
+	pstUserID->cUserID[nUserIDLen] = '\0';
+
+	TRACE_MSG("strlen(userId)=%d, nIdx=%d\n", strlen(pstUserID->cUserID), nIdx);
+	for(int i = 0 ; i < 4 ; i++){
+		int offset = i * 10;
+		TRACE_MSG("%c(%d), %c(%d), %c(%d), %c(%d), %c(%d), %c(%d), %c(%d), %c(%d), %c(%d), %c(%d)\n", 
+			pstUserID->cUserID[0 + offset], pstUserID->cUserID[0 + offset], 
+			pstUserID->cUserID[1 + offset], pstUserID->cUserID[1 + offset], 
+			pstUserID->cUserID[2 + offset], pstUserID->cUserID[2 + offset], 
+			pstUserID->cUserID[3 + offset], pstUserID->cUserID[3 + offset], 
+			pstUserID->cUserID[4 + offset], pstUserID->cUserID[4 + offset], 
+			pstUserID->cUserID[5 + offset], pstUserID->cUserID[5 + offset], 
+			pstUserID->cUserID[6 + offset], pstUserID->cUserID[6 + offset], 
+			pstUserID->cUserID[7 + offset], pstUserID->cUserID[7 + offset], 
+			pstUserID->cUserID[8 + offset], pstUserID->cUserID[8 + offset], 
+			pstUserID->cUserID[9 + offset], pstUserID->cUserID[9 + offset]);
+	}
+	nIdx = ALIGN_LEN4(strlen(pstUserID->cUserID) + nIdx);
+	pstUserID->bUserID = TRUE;
+	TRACE_MSG("return nIdx:%d\n", nIdx);
+	return nIdx;
+}
+//-------------------------------------------------------------------------------------------------------------- User ID Field End.//
+
+// Queue Size Field ---------------------------------------------------------------------------------------------------------------//
+int MBCP::__Decode_Queue_Size(char* pBuf, _MBCP_QUEUE_SIZE *pstQueueSize){
+	TRACE_MSG("GRANTED DECode Queue Size.. QueueSize=%d\n");
+	int nIdx = 0;
+	nIdx += 2; //Field ID + LenValue
+	pstQueueSize->nQueueSize = GET_16(pBuf + nIdx); nIdx += 2;
+	pstQueueSize->bQueueSize = TRUE;
+	TRACE_MSG("GRANTED DECode Queue Size.. QueueSize=%d\n", pstQueueSize->nQueueSize);
+    return nIdx;
+}
+//---------------------------------------------------------------------------------------------------------- Queue Size Field End.//
+
+// Sequence Number Field -------------------------------------------------------------------------------------------------------//
+int MBCP::__Decode_Message_Sequence_Number(char *pBuf, _MBCP_MSG_SEQ_NUMBER *pstSeqNum){
+	int nIdx = 0;
+	nIdx += 2; //Field ID + LenValue
+	pstSeqNum->nSeqNum = GET_16(pBuf + nIdx); nIdx += 2;
+	pstSeqNum->bSeqNum = TRUE;
+	TRACE_MSG("pstSeqNum=%d , bSeqNum=%d\n", pstSeqNum->nSeqNum, pstSeqNum->bSeqNum);
+	return nIdx;
+}
+//-------------------------------------------------------------------------------------------------- Sequence Number Field End.//
+
+// Queue_User ID Field ----------------------------------------------------------------------------------------------------------//
+int MBCP::__Decode_Queue_UserID(char* pBuf, _MBCP_QUEUE_USER_ID *pstQueueUserID){
+	int nIdx = 0;
+	nIdx += 1; //Field ID
+	int nUserIDLen = pBuf[nIdx]; nIdx += 1;
+
+	strncpy(pstQueueUserID->cUserID, pBuf + nIdx, nUserIDLen);
+	pstQueueUserID->cUserID[nUserIDLen] = '\0';
+
+	nIdx = ALIGN_LEN4(strlen(pstQueueUserID->cUserID) + nIdx);
+	pstQueueUserID->bUserID = TRUE;
+
+	return nIdx;
+}
+//----------------------------------------------------------------------------------------------------- Queue_User ID Field End.//
+
+// Source Field -------------------------------------------------------------------------------------------------------------------//
+int MBCP::__Decode_SourceField(char* pBuf, _MBCP_SOURCE*pstSource){
+	int nIdx = 0;
+	nIdx += 2; //Field ID + LenValue
+	pstSource->nSource = GET_16(pBuf + nIdx); nIdx += 2;
+	pstSource->bSource = TRUE;
+
+	return nIdx;
+}
+//-------------------------------------------------------------------------------------------------------------- Source Field End.//
+
+// Track Info Field ---------------------------------------------------------------------------------------------------------------//
+int MBCP::__Decode_TrackInfo(char *pBuf, _MBCP_TRACK_INFO *pstTrackInfo){
+	int nIdx = 0;
+	nIdx += 1; //Field ID;
+
+	int nTrackInfo_Len = pBuf[nIdx]; nIdx += 1;
+	int nParticipantRefLen = nTrackInfo_Len - 1;
+
+	pstTrackInfo->nParticipant_Reference_Count = nParticipantRefLen / 32;
+	pstTrackInfo->nQueue_Capability = pBuf[2]; nIdx += 1;
+	pstTrackInfo->nParticipant_TypeLen = pBuf[3]; nIdx += 1;
+
+	strncpy(pstTrackInfo->cParticipant_Type, pBuf + nIdx, pstTrackInfo->nParticipant_TypeLen); nIdx += 4;
+	pstTrackInfo->cParticipant_Type[pstTrackInfo->nParticipant_TypeLen] = '\0';
+
+
+	for(int for_i = 0; for_i < pstTrackInfo->nParticipant_Reference_Count; for_i++){
+		pstTrackInfo->nFloor_Participant_Reference[for_i] = pBuf[for_i]; nIdx += 4;
+	}
+
+	pstTrackInfo->bTrackInfo = TRUE;
+
+	return nIdx;
+}
+//---------------------------------------------------------------------------------------------------------- Track Info Field End.//
+
+// Message Type Field ---------------------------------------------------------------------------------------------------------------//
+int MBCP::__Decode_MsgType(char* pBuf, _MBCP_MSG_TYPE *pstMsgType){
+	int nIdx = 0;
+	nIdx += 2; //Field ID + LenValue
+	pstMsgType->nMsgType = pBuf[nIdx]; nIdx += 1;
+	nIdx += 1; //Spare
+	pstMsgType->bMsgType = TRUE;
+
+    return nIdx;
+}
+//-------------------------------------------------------------------------------------------------------- Message Type Field End.//
+
+// Indicator Field ------------------------------------------------------------------------------------------------------------------//
+int MBCP::__Decode_Indicator(char *pBuf, _MBCP_FLOOR_INDICATOR *pstIndicator){
+	int nIdx = 0;
+	nIdx += 2; //Field ID + LenValue
+	unsigned short usIndicator = GET_16(pBuf + nIdx);
+
+	if((usIndicator & MBCP_INDICATOR_BIT_A) == MBCP_INDICATOR_BIT_A){
+		pstIndicator->usA_bit = ON;
+	}
+	if((usIndicator & MBCP_INDICATOR_BIT_B) == MBCP_INDICATOR_BIT_B){
+		pstIndicator->usB_bit = ON;
+	}
+	if((usIndicator & MBCP_INDICATOR_BIT_C) == MBCP_INDICATOR_BIT_C){
+		pstIndicator->usC_bit = ON;
+	}
+	if((usIndicator & MBCP_INDICATOR_BIT_D) == MBCP_INDICATOR_BIT_D){
+		pstIndicator->usD_bit = ON;
+	}
+	if((usIndicator & MBCP_INDICATOR_BIT_E) == MBCP_INDICATOR_BIT_E){
+		pstIndicator->usE_bit = ON;
+	}
+	if((usIndicator & MBCP_INDICATOR_BIT_F) == MBCP_INDICATOR_BIT_F){
+		pstIndicator->usF_bit = ON;
+	}
+	if((usIndicator & MBCP_INDICATOR_BIT_G) == MBCP_INDICATOR_BIT_G){
+		pstIndicator->usG_bit = ON;
+	}
+	if((usIndicator & MBCP_INDICATOR_BIT_H) == MBCP_INDICATOR_BIT_H){
+		pstIndicator->usH_bit = ON;
+	}
+
+	nIdx += 2;
+
+	pstIndicator->cIsBeFlag = TRUE;
+
+	return nIdx;
+}
+//------------------------------------------------------------------------------------------------------------- Indicator Field End.//
+///======================================================================================== Field Decoder End.///
+
+// Floor Ack ----------------------------------------------------------------------------------------------------------//
+int MBCP::__Floor_Ack_Decoder(char *pcBuf, _MBCP_MSG *pstMsg, int nLen){
+	int nOffset = 0;
+
+	_MBCP_Ack *pstAckMsg = &pstMsg->stPayload.stAck;
+	char *ptr = pcBuf;
+
+	int nDecoderLen = 0;
+
+	while(nDecoderLen < nLen){
+		unsigned char ucField = 0x00;
+		ucField = ptr[nOffset];
+		switch(ucField){
+			case MBCP_Field_Source:
+			{
+				nOffset += __Decode_SourceField(ptr + nOffset, &pstAckMsg->Source);
+				break;
+			}	
+			case MBCP_Field_Message_Type:
+			{
+				nOffset += __Decode_MsgType(ptr + nOffset, &pstAckMsg->MsgType);
+				break;
+			}
+			case MBCP_Field_Track_Info:
+			{
+				nOffset += __Decode_TrackInfo(ptr + nOffset, &pstAckMsg->Track_Info);
+				break;
+			}
+			default:{
+				return FAIL;
+			}
+		}
+
+		nDecoderLen = MBCP_MAX_HD_LEN + nOffset;
+	}
+
+	nOffset += nDecoderLen;
+
+	return SUCC;
+}
+//----------------------------------------------------------------------------------------------------- Floor Ack End.//
+
+
+
+
+
+
+
+
+
 
 int MBCP::Encode()
 {
+	SetHeader(this->nMsgName);
 	int nMsgName = this->nMsgName;
 	_MBCP_MSG *pstMsg = &this->pstMsg;
 	char *pcBuf = this->pcBuf;
-	int *pnLen = &this->nBufLen;
-
+	
 	int nOffset = MBCP_MAX_HD_LEN;
 	nOffset += __Encode(pstMsg, pcBuf + nOffset);
 	pstMsg->nMsgName = nMsgName;
 	__Encode_Header(pstMsg, pcBuf, nOffset);
-	*pnLen = nOffset;
-	this->pstMsg.stHeader.length = *pnLen;
+	this->nBufLen = nOffset;
+	this->pstMsg.stHeader.length = this->nBufLen;
+	printf("Encode len=%d\n", this->nBufLen);
 	return SUCC;
-
 }
+char* MBCP::printBIN(char *szDestBuf, int x)
+{
+	for(int i=7; i >= 0; --i){
+        sprintf(szDestBuf, "%d", (x >> i) & 1);
+        szDestBuf++;
+    }
+	*szDestBuf = ' ';
+    szDestBuf++;
+    return szDestBuf;
+}
+
+char* MBCP::DumpMsgBicode(char *szDestBuf, char *szSourceBuf, int nSourceLen)
+{
+    char *p = szDestBuf;
+	for(int i=0; i<nSourceLen; i++){
+		if(i%4 == 0) {
+            *p = '\n';
+            p++;
+        }
+		p = printBIN(p, (int)szSourceBuf[i]);
+	}
+    *p = '\n';
+    p++;
+    *p = '\n';
+    p++;
+    p = '\0';
+    return szDestBuf;
+}
+
+
 std::string MBCP::GetDump(){
+	TRACE_MSG("GetDump..\n");
 	char buf[8096] = "";
 	snprintf(buf, sizeof(buf), "%s\tversion: %d, subtype: %#x(%s), pt: %d, length: %d, ssrc: %u\n%s", 
 		"-----------------------------------------------------------------------------------------------\n",
@@ -64,6 +1003,7 @@ std::string MBCP::GetDump(){
 		this->pstMsg.stHeader.ssrc, 
 		"-----------------------------------------------------------------------------------------------\n");
 	std::string dump(buf);
+	TRACE_MSG("return\n");
 	return dump;
 }
 int MBCP::__Get_SubType(int nMsgName, int nAckFlag){
@@ -94,7 +1034,8 @@ int MBCP::__Encode_Header(_MBCP_MSG *pstMsg, char *pBuf, int nLen){
 	_MBCP_HEADER *pstHeader = &pstMsg->stHeader;
 	int nIdx = 0;
 	pBuf[nIdx] = 2 << 6;
-	pBuf[nIdx] |= __Get_SubType(pstMsg->nMsgName, pstMsg->nAckFlag); nIdx += 1;
+	// pBuf[nIdx] |= __Get_SubType(pstMsg->nMsgName, pstMsg->nAckFlag); nIdx += 1;
+	pBuf[nIdx] |= pstMsg->nMsgName; nIdx += 1;
 	pBuf[nIdx] = pstHeader->pt; nIdx += 1;
 #if 0
 	PUT_16(pBuf + nIdx, nLen); nIdx += 2;
@@ -351,7 +1292,9 @@ int __Decode_RejectCause(char* pBuf, _MBCP_FLOOR_REJECTCAUSE *pstRejectCause){
 	nIdx += 1; //Field ID
 	int nReject_CauseLen = pBuf[nIdx]; nIdx += 1;
 	pstRejectCause->nReject_Cause = GET_16(pBuf + nIdx); nIdx += 2;
-	strncpy(pstRejectCause->cReject_Cause, pBuf + nIdx, nReject_CauseLen); nIdx = ALIGN_LEN4(strlen(pstRejectCause->cReject_Cause) + nIdx);
+	strncpy(pstRejectCause->cReject_Cause, pBuf + nIdx, nReject_CauseLen);
+	pstRejectCause->cReject_Cause[nReject_CauseLen] = '\0';
+	nIdx = ALIGN_LEN4(strlen(pstRejectCause->cReject_Cause) + nIdx);
 	pstRejectCause->bRejectCause = TRUE;
 
     return nIdx;
@@ -376,6 +1319,7 @@ int __Decode_Granted_Party_Identity_Field(char* pBuf, _MBCP_GRANT_PARTY_IDENTITY
 	nIdx += 1; //Field ID
 	int nGrant_party_IdentityLen = pBuf[nIdx]; nIdx += 1;
 	strncpy(pstGranted_Party_Identity->cGrant_party_Identity, pBuf + nIdx, nGrant_party_IdentityLen);
+	pstGranted_Party_Identity->cGrant_party_Identity[nGrant_party_IdentityLen] = '\0';
 	nIdx = ALIGN_LEN4(strlen(pstGranted_Party_Identity->cGrant_party_Identity) + nIdx);
 	pstGranted_Party_Identity->bGrant_party_Identity = TRUE;
 
@@ -400,7 +1344,9 @@ int __Decode_UserID(char* pBuf, _MBCP_USER_ID *pstUserID){
 	nIdx += 1; //Field ID
 	int nUserIDLen = pBuf[1]; nIdx += 1;
 
-	strncpy(pstUserID->cUserID, pBuf + nIdx, nUserIDLen); nIdx = ALIGN_LEN4(strlen(pstUserID->cUserID) + nIdx);
+	strncpy(pstUserID->cUserID, pBuf + nIdx, nUserIDLen);
+	pstUserID->cUserID[nUserIDLen] = '\0';
+	nIdx = ALIGN_LEN4(strlen(pstUserID->cUserID) + nIdx);
 	pstUserID->bUserID = TRUE;
 
 	return nIdx;
@@ -412,6 +1358,7 @@ int __Decode_Queue_Size(char* pBuf, _MBCP_QUEUE_SIZE *pstQueueSize){
 	int nIdx = 0;
 	nIdx += 2; //Field ID + LenValue
 	pstQueueSize->nQueueSize = GET_16(pBuf + nIdx); nIdx += 2;
+	pstQueueSize->bQueueSize = TRUE;
 
     return nIdx;
 }
@@ -435,6 +1382,8 @@ int __Decode_Queue_UserID(char* pBuf, _MBCP_QUEUE_USER_ID *pstQueueUserID){
 	int nUserIDLen = pBuf[nIdx]; nIdx += 1;
 
 	strncpy(pstQueueUserID->cUserID, pBuf + nIdx, nUserIDLen);
+	pstQueueUserID->cUserID[nUserIDLen] = '\0';
+
 	nIdx = ALIGN_LEN4(strlen(pstQueueUserID->cUserID) + nIdx);
 	pstQueueUserID->bUserID = TRUE;
 
@@ -466,6 +1415,7 @@ int __Decode_TrackInfo(char *pBuf, _MBCP_TRACK_INFO *pstTrackInfo){
 	pstTrackInfo->nParticipant_TypeLen = pBuf[3]; nIdx += 1;
 
 	strncpy(pstTrackInfo->cParticipant_Type, pBuf + nIdx, pstTrackInfo->nParticipant_TypeLen); nIdx += 4;
+	pstTrackInfo->cParticipant_Type[pstTrackInfo->nParticipant_TypeLen] = '\0';
 
 	for(int for_i = 0; for_i < pstTrackInfo->nParticipant_Reference_Count; for_i++){
 		pstTrackInfo->nFloor_Participant_Reference[for_i] = pBuf[for_i]; nIdx += 4;
@@ -621,7 +1571,8 @@ std::string MBCP::Str_MBCP_UserID(_MBCP_USER_ID *pstUserID)
 std::string MBCP::Str_MBCP_QueueSize(_MBCP_QUEUE_SIZE *pstQueueSize)
 {
 	char buf[1024] = "";
-    snprintf(buf, sizeof(buf), "\tQueueSize: %d\n", pstQueueSize->nQueueSize);
+	if(pstQueueSize->bQueueSize == TRUE)
+    	snprintf(buf, sizeof(buf), "\tQueueSize: %d\n", pstQueueSize->nQueueSize);
 	std::string temp(buf);
 	return temp;
 }
@@ -662,7 +1613,11 @@ std::string MBCP::Str_MBCP_TrackInfo(_MBCP_TRACK_INFO *pstTrackInfo)
 		"\tTrackInfo.nParticipant_TypeLen: %d\n" \
 		"\tTrackInfo.cParticipant_Type: %s\n" \
 		"\tTrackInfo.nParticipant_Reference_Count: %d\n", 
-		pstTrackInfo->nQueue_Capability, pstTrackInfo->nParticipant_TypeLen, pstTrackInfo->cParticipant_Type, pstTrackInfo->nParticipant_Reference_Count);
+		pstTrackInfo->nQueue_Capability, 
+		pstTrackInfo->nParticipant_TypeLen, 
+		pstTrackInfo->cParticipant_Type, 
+		pstTrackInfo->nParticipant_Reference_Count);
+
     }
 	std::string temp(buf);
 	return temp;
@@ -688,43 +1643,43 @@ std::string MBCP::Str_MBCP_Indicator(_MBCP_FLOOR_INDICATOR *pstIndicator)
 	return temp;
 }
 
-void MBCP::__SetIndicator(_MBCP_FLOOR_INDICATOR *pstBuf, char cIndicator){
-	if(cIndicator == 'A')
+void MBCP::__SetIndicator(_MBCP_FLOOR_INDICATOR *pstBuf, const char * szIndicator){
+	if(!strcmp("A", szIndicator))
 	{
 		pstBuf->cIsBeFlag = TRUE;
 		pstBuf->usA_bit = ON;
 	}
-	else if(cIndicator == 'B')
+	else if(!strcmp("B", szIndicator))
 	{
 		pstBuf->cIsBeFlag = TRUE;
 		pstBuf->usB_bit = ON;
 	}
-	else if(cIndicator == 'C')
+	else if(!strcmp("C", szIndicator))
 	{
 		pstBuf->cIsBeFlag = TRUE;
 		pstBuf->usC_bit = ON;
 	}
-	else if(cIndicator == 'D')
+	else if(!strcmp("D", szIndicator))
 	{
 		pstBuf->cIsBeFlag = TRUE;
 		pstBuf->usD_bit = ON;
 	}
-	else if(cIndicator == 'E')
+	else if(!strcmp("E", szIndicator))
 	{
 		pstBuf->cIsBeFlag = TRUE;
 		pstBuf->usE_bit = ON;
 	}
-	else if(cIndicator == 'F')
+	else if(!strcmp("F", szIndicator))
 	{
 		pstBuf->cIsBeFlag = TRUE;
 		pstBuf->usF_bit = ON;
 	}
-	else if(cIndicator == 'G')
+	else if(!strcmp("G", szIndicator))
 	{
 		pstBuf->cIsBeFlag = TRUE;
 		pstBuf->usG_bit = ON;
 	}
-	else if(cIndicator == 'H')
+	else if(!strcmp("H", szIndicator))
 	{
 		pstBuf->cIsBeFlag = TRUE;
 		pstBuf->usH_bit = ON;
@@ -749,11 +1704,16 @@ void MBCP::__SetUserId(_MBCP_USER_ID *pstBuf, const char *szUserId){
 	strcpy(pstBuf->cUserID, szUserId);
 }
 void MBCP::__SetQueueSize(_MBCP_QUEUE_SIZE *pstBuf, int nQueueSize){
+	pstBuf->bQueueSize = TRUE;
 	pstBuf->nQueueSize = nQueueSize;
 }
-void MBCP::__SetRejectCause(_MBCP_FLOOR_REJECTCAUSE *pstBuf, int nRejectCause){
+void MBCP::__SetnRejectCause(_MBCP_FLOOR_REJECTCAUSE *pstBuf, int nRejectCause){
 	pstBuf->bRejectCause = TRUE;
 	pstBuf->nReject_Cause = nRejectCause;
+}
+void MBCP::__SetstrRejectCause(_MBCP_FLOOR_REJECTCAUSE *pstBuf, const char *szRejectCause){
+	pstBuf->bRejectCause = TRUE;
+	strcpy(pstBuf->cReject_Cause, szRejectCause);
 }
 void MBCP::__SetGrantPartyId(_MBCP_GRANT_PARTY_IDENTITY *pstBuf, const char *szGrantPartyId){
 	pstBuf->bGrant_party_Identity = TRUE;
@@ -763,11 +1723,202 @@ void MBCP::__SetGrantPermissionRequest(_MBCP_PERMISSION_REQUEST_FLOOR_FIELD *pst
 	pstBuf->bPermission_Request_Floor_Value = TRUE;
 	pstBuf->nPermission_Request_Floor_Value = nPermissionRequest;
 }
+void MBCP::__SetSource(_MBCP_SOURCE *pstBuf, int nSource){
+	pstBuf->bSource = TRUE;
+	pstBuf->nSource = nSource;
+}
+void MBCP::__SetMessageType(_MBCP_MSG_TYPE *pstBuf, int nMsgType){
+	pstBuf->bMsgType = TRUE;
+	pstBuf->nMsgType = nMsgType;
+}
 
 
-MBCP_IDLE::MBCP_IDLE(){
-    this->nMsgName = MBCP_MSGNAME_FLOOR_IDLE; 
-	SetHeader(MBCP_FLOOR_IDLE);
+MBCP_REQUEST::MBCP_REQUEST() : MBCP(){
+    this->nMsgName = MBCP_FLOOR_REQUEST; 
+}
+MBCP_REQUEST::MBCP_REQUEST(char *szBuf, int nBufLen) : MBCP(szBuf, nBufLen) {
+    this->nMsgName = MBCP_FLOOR_REQUEST; 
+}
+MBCP_REQUEST::~MBCP_REQUEST(){
+
+}
+std::string MBCP_REQUEST::GetDump(){
+	std::string dump = MBCP::GetDump();
+
+    _MBCP_Floor_Request *pstMsg = &this->pstMsg.stPayload.stFloor_Req;
+
+    dump += Str_MBCP_Priority(&pstMsg->priority);
+	dump += Str_MBCP_UserID(&pstMsg->UserID);
+	dump += Str_MBCP_Indicator(&pstMsg->Indicator);
+	//dump += Str_MBCP_TrackInfo(&pstMsg->priority);
+	return dump;
+}
+void MBCP_REQUEST::SetPriority(int nPriority){
+	_MBCP_FLOOR_PRIORITY *pstBuf = &this->pstMsg.stPayload.stFloor_Req.priority;
+	__SetPriority(pstBuf, nPriority);
+}
+void MBCP_REQUEST::SetUserId( const char *szUserId){
+	_MBCP_USER_ID *pstBuf = &this->pstMsg.stPayload.stFloor_Req.UserID;
+	__SetUserId(pstBuf, szUserId);
+}
+void MBCP_REQUEST::SetIndicator(const char *szIndicator){
+	_MBCP_FLOOR_INDICATOR *pstBuf = &this->pstMsg.stPayload.stFloor_Req.Indicator;
+	__SetIndicator(pstBuf, szIndicator);
+}
+int MBCP_REQUEST::__Encode( _MBCP_MSG *pstMsg, char *pcBuf){
+	int nOffset = 0;
+
+	_MBCP_Floor_Request *pstFloor_ReqMsg = &pstMsg->stPayload.stFloor_Req;
+	char *ptr = pcBuf;
+
+	if(pstFloor_ReqMsg->priority.bPriority == TRUE){
+		_MBCP_FLOOR_PRIORITY *pstPriority = &pstFloor_ReqMsg->priority;
+		nOffset += __Encode_Priority(pstPriority, ptr + nOffset);
+	}
+
+	if(pstFloor_ReqMsg->UserID.bUserID == TRUE){
+		_MBCP_USER_ID *pstUserID = &pstFloor_ReqMsg->UserID;
+		nOffset += __Encode_UserID(pstUserID, ptr +nOffset);
+	}
+
+	if(pstFloor_ReqMsg->Track_Info.bTrackInfo == TRUE){
+		_MBCP_TRACK_INFO *pstTrackInfo = &pstFloor_ReqMsg->Track_Info;
+		nOffset += __Encode_Track_Info(pstTrackInfo, ptr + nOffset);
+	}
+
+	if(pstFloor_ReqMsg->Indicator.cIsBeFlag == TRUE){
+		_MBCP_FLOOR_INDICATOR *pstIndicator = &pstFloor_ReqMsg->Indicator;
+		nOffset += __Encode_Indicator(pstIndicator, ptr + nOffset);
+	}
+
+	return nOffset;
+}
+
+
+
+
+MBCP_RELEASE::MBCP_RELEASE() : MBCP(){
+    this->nMsgName = MBCP_FLOOR_RELEASE; 
+}
+MBCP_RELEASE::MBCP_RELEASE(char *szBuf, int nBufLen) : MBCP(szBuf, nBufLen) {
+    this->nMsgName = MBCP_FLOOR_RELEASE; 
+}
+MBCP_RELEASE::~MBCP_RELEASE(){
+
+}
+std::string MBCP_RELEASE::GetDump(){
+	std::string dump = MBCP::GetDump();
+
+    _MBCP_Floor_Release *pstMsg = &this->pstMsg.stPayload.stFloor_Release;
+
+	dump += Str_MBCP_UserID(&pstMsg->UserID);
+	dump += Str_MBCP_Indicator(&pstMsg->Indicator);
+	//dump += Str_MBCP_TrackInfo(&pstMsg->priority);
+	return dump;
+}
+void MBCP_RELEASE::SetUserId( const char *szUserId){
+	_MBCP_USER_ID *pstBuf = &this->pstMsg.stPayload.stFloor_Release.UserID;
+	__SetUserId(pstBuf, szUserId);
+}
+void MBCP_RELEASE::SetIndicator(const char *szIndicator){
+	_MBCP_FLOOR_INDICATOR *pstBuf = &this->pstMsg.stPayload.stFloor_Release.Indicator;
+	__SetIndicator(pstBuf, szIndicator);
+}
+int MBCP_RELEASE::__Encode(_MBCP_MSG *pstMsg, char *pcBuf){
+	int nOffset = 0;
+
+	_MBCP_Floor_Release *pstFloor_ReleaseMsg = &pstMsg->stPayload.stFloor_Release;
+	char *ptr = pcBuf;
+
+	if(pstFloor_ReleaseMsg->UserID.bUserID == TRUE){
+		_MBCP_USER_ID *pstUserID = &pstFloor_ReleaseMsg->UserID;
+		nOffset += __Encode_UserID(pstUserID, ptr +nOffset);
+	}
+
+	if(pstFloor_ReleaseMsg->Track_Info.bTrackInfo == TRUE){
+		_MBCP_TRACK_INFO *pstTrackInfo = &pstFloor_ReleaseMsg->Track_Info;
+		nOffset += __Encode_Track_Info(pstTrackInfo, ptr + nOffset);
+	}
+
+	if(pstFloor_ReleaseMsg->Indicator.cIsBeFlag == TRUE){
+		_MBCP_FLOOR_INDICATOR *pstIndicator = &pstFloor_ReleaseMsg->Indicator;
+		nOffset += __Encode_Indicator(pstIndicator, ptr + nOffset);
+	}
+
+	return nOffset;
+}
+
+
+// MBCP_REQUEST::MBCP_REQUEST() : MBCP(){
+//     this->nMsgName = MBCP_FLOOR_REQUEST; 
+// }
+// MBCP_REQUEST::MBCP_REQUEST(char *szBuf, int nBufLen) : MBCP(szBuf, nBufLen) {
+//     this->nMsgName = MBCP_FLOOR_REQUEST; 
+// }
+// MBCP_REQUEST::~MBCP_REQUEST(){
+
+// }
+// std::string MBCP_REQUEST::GetDump(){
+// 	std::string dump = MBCP::GetDump();
+
+//     _MBCP_Floor_Request *pstMsg = &this->pstMsg.stPayload.stFloor_Req;
+
+//     dump += Str_MBCP_Priority(&pstMsg->priority);
+// 	dump += Str_MBCP_UserID(&pstMsg->UserID);
+// 	dump += Str_MBCP_Indicator(&pstMsg->Indicator);
+// 	//dump += Str_MBCP_TrackInfo(&pstMsg->priority);
+// 	return dump;
+// }
+// void MBCP_REQUEST::SetPriority(int nPriority){
+// 	_MBCP_FLOOR_PRIORITY *pstBuf = &this->pstMsg.stPayload.stFloor_Req.priority;
+// 	__SetPriority(pstBuf, nPriority);
+// }
+// void MBCP_REQUEST::SetUserId( const char *szUserId){
+// 	_MBCP_USER_ID *pstBuf = &this->pstMsg.stPayload.stFloor_Req.UserID;
+// 	__SetUserId(pstBuf, szUserId);
+// }
+// void MBCP_REQUEST::SetIndicator(const char *szIndicator){
+// 	_MBCP_FLOOR_INDICATOR *pstBuf = &this->pstMsg.stPayload.stFloor_Req.Indicator;
+// 	__SetIndicator(pstBuf, szIndicator);
+// }
+// int MBCP_REQUEST::__Encode( _MBCP_MSG *pstMsg, char *pcBuf){
+// 	int nOffset = 0;
+
+// 	_MBCP_Floor_Request *pstFloor_ReqMsg = &pstMsg->stPayload.stFloor_Req;
+// 	char *ptr = pcBuf;
+
+// 	if(pstFloor_ReqMsg->priority.bPriority == TRUE){
+// 		_MBCP_FLOOR_PRIORITY *pstPriority = &pstFloor_ReqMsg->priority;
+// 		nOffset += __Encode_Priority(pstPriority, ptr + nOffset);
+// 	}
+
+// 	if(pstFloor_ReqMsg->UserID.bUserID == TRUE){
+// 		_MBCP_USER_ID *pstUserID = &pstFloor_ReqMsg->UserID;
+// 		nOffset += __Encode_UserID(pstUserID, ptr +nOffset);
+// 	}
+
+// 	if(pstFloor_ReqMsg->Track_Info.bTrackInfo == TRUE){
+// 		_MBCP_TRACK_INFO *pstTrackInfo = &pstFloor_ReqMsg->Track_Info;
+// 		nOffset += __Encode_Track_Info(pstTrackInfo, ptr + nOffset);
+// 	}
+
+// 	if(pstFloor_ReqMsg->Indicator.cIsBeFlag == TRUE){
+// 		_MBCP_FLOOR_INDICATOR *pstIndicator = &pstFloor_ReqMsg->Indicator;
+// 		nOffset += __Encode_Indicator(pstIndicator, ptr + nOffset);
+// 	}
+
+// 	return nOffset;
+// }
+
+
+
+MBCP_IDLE::MBCP_IDLE() : MBCP(){
+	TRACE_MSG("MBCP MBCP_IDLE() Constructor\n");
+    this->nMsgName = MBCP_FLOOR_IDLE; 
+}
+MBCP_IDLE::MBCP_IDLE(char *szBuf, int nBufLen) : MBCP(szBuf, nBufLen) {
+	TRACE_MSG("MBCP MBCP_IDLE(char*, int) Constructor\n");
+    this->nMsgName = MBCP_FLOOR_IDLE; 
 }
 MBCP_IDLE::~MBCP_IDLE(){
 
@@ -811,19 +1962,23 @@ int MBCP_IDLE::__Encode( _MBCP_MSG *pstMsg, char *pcBuf){
 }
 
 void MBCP_IDLE::SetSequenceNumber(int nSeq){
+	printf("MBCP_IDLE SetSequenceNumber..\n");
 	_MBCP_MSG_SEQ_NUMBER *pstBuf = &this->pstMsg.stPayload.stFloor_Idle.SeqNum;
 	__SetSequenceNumber(pstBuf, nSeq);
 }
 
-void MBCP_IDLE::SetIndicator(char cIndicator){
+void MBCP_IDLE::SetIndicator(const char *szIndicator){
+	printf("MBCP_IDLE SetIndicator..%s\n", szIndicator);
 	_MBCP_FLOOR_INDICATOR *pstBuf = &this->pstMsg.stPayload.stFloor_Idle.Indicator;
-	__SetIndicator(pstBuf, cIndicator);
+	__SetIndicator(pstBuf, szIndicator);
 }
 
 
 MBCP_GRANTED::MBCP_GRANTED(){
-    this->nMsgName = MBCP_MSGNAME_FLOOR_GRANTED; 
-	SetHeader(MBCP_FLOOR_GRANTED);
+    this->nMsgName = MBCP_FLOOR_GRANTED; 
+}
+MBCP_GRANTED::MBCP_GRANTED(char *szBuf, int nBufLen) : MBCP(szBuf, nBufLen) {
+    this->nMsgName = MBCP_FLOOR_GRANTED; 
 }
 MBCP_GRANTED::~MBCP_GRANTED(){
 
@@ -845,9 +2000,9 @@ void MBCP_GRANTED::SetQueueSize(int nQueueSize){
 	_MBCP_QUEUE_SIZE *pstBuf = &this->pstMsg.stPayload.stFloor_Granted.QueueSize;
 	__SetQueueSize(pstBuf, nQueueSize);
 }
-void MBCP_GRANTED::SetIndicator(char cIndicator){
+void MBCP_GRANTED::SetIndicator(const char *szIndicator){
 	_MBCP_FLOOR_INDICATOR *pstBuf = &this->pstMsg.stPayload.stFloor_Granted.Indicator;
-	__SetIndicator(pstBuf, cIndicator);
+	__SetIndicator(pstBuf, szIndicator);
 }
 std::string MBCP_GRANTED::GetDump(){
 	std::string dump = MBCP::GetDump();
@@ -885,9 +2040,13 @@ int MBCP_GRANTED::__Encode( _MBCP_MSG *pstMsg, char *pcBuf){
 		nOffset += __Encode_UserID(pstUserId, ptr + nOffset);
 	}
 
-	/* The Queue Size field is only applicable in off-network  */
-	//_MBCP_QUEUE_SIZE *pstQueueSize = &pstFloor_Granted->QueueSize;
-	//nOffset += __Encode_Queue_Size(pstQueueSize, ptr + nOffset);
+	if(pstFloor_Granted->QueueSize.bQueueSize == TRUE){
+		/* The Queue Size field is only applicable in off-network  */
+		//_MBCP_QUEUE_SIZE *pstQueueSize = &pstFloor_Granted->QueueSize;
+		//nOffset += __Encode_Queue_Size(pstQueueSize, ptr + nOffset);
+		_MBCP_QUEUE_SIZE *pstQueueSize = &pstFloor_Granted->QueueSize;
+		nOffset += __Encode_Queue_Size(pstQueueSize, ptr + nOffset);
+	}
 
 	if(pstFloor_Granted->QueueUserID.bUserID == TRUE){
 		_MBCP_QUEUE_USER_ID *pstQueueUserID = &pstFloor_Granted->QueueUserID;
@@ -915,24 +2074,30 @@ int MBCP_GRANTED::__Encode( _MBCP_MSG *pstMsg, char *pcBuf){
 
 
 MBCP_DENY::MBCP_DENY(){
-    this->nMsgName = MBCP_MSGNAME_FLOOR_DENY; 
-	SetHeader(MBCP_FLOOR_DENY);
+    this->nMsgName = MBCP_FLOOR_DENY; 
+}
+MBCP_DENY::MBCP_DENY(char *szBuf, int nBufLen) : MBCP(szBuf, nBufLen) {
+    this->nMsgName = MBCP_FLOOR_DENY; 
 }
 MBCP_DENY::~MBCP_DENY(){
 
 }
 
-void MBCP_DENY::SetRejectCause(int nRejectCause){
+void MBCP_DENY::SetnRejectCause(int nRejectCause){
 	_MBCP_FLOOR_REJECTCAUSE *pstBuf = &this->pstMsg.stPayload.stFloor_Deny.RejectCause;
-	__SetRejectCause(pstBuf, nRejectCause);
+	__SetnRejectCause(pstBuf, nRejectCause);
+}
+void MBCP_DENY::SetstrRejectCause(const char *szRejectCause){
+	_MBCP_FLOOR_REJECTCAUSE *pstBuf = &this->pstMsg.stPayload.stFloor_Deny.RejectCause;
+	__SetstrRejectCause(pstBuf, szRejectCause);
 }
 void MBCP_DENY::SetUserId( const char *szUserId){
 	_MBCP_USER_ID *pstBuf = &this->pstMsg.stPayload.stFloor_Granted.UserID;
 	__SetUserId(pstBuf, szUserId);
 }
-void MBCP_DENY::SetIndicator(char cIndicator){
+void MBCP_DENY::SetIndicator(const char *szIndicator){
 	_MBCP_FLOOR_INDICATOR *pstBuf = &this->pstMsg.stPayload.stFloor_Granted.Indicator;
-	__SetIndicator(pstBuf, cIndicator);
+	__SetIndicator(pstBuf, szIndicator);
 }
 
 std::string MBCP_DENY::GetDump(){
@@ -979,20 +2144,26 @@ int MBCP_DENY::__Encode( _MBCP_MSG *pstMsg, char *pcBuf)
 }
 
 MBCP_REVOKE::MBCP_REVOKE(){
-    this->nMsgName = MBCP_MSGNAME_FLOOR_REVOKE; 
-	SetHeader(MBCP_FLOOR_REVOKE);
+    this->nMsgName = MBCP_FLOOR_REVOKE; 
+}
+MBCP_REVOKE::MBCP_REVOKE(char *szBuf, int nBufLen) : MBCP(szBuf, nBufLen) {
+    this->nMsgName = MBCP_FLOOR_REVOKE; 
 }
 MBCP_REVOKE::~MBCP_REVOKE(){
 
 }
 
-void MBCP_REVOKE::SetRejectCause(int nRejectCause){
+void MBCP_REVOKE::SetnRejectCause(int nRejectCause){
 	_MBCP_FLOOR_REJECTCAUSE *pstBuf = &this->pstMsg.stPayload.stFloor_Revoke.RejectCause;
-	__SetRejectCause(pstBuf, nRejectCause);
+	__SetnRejectCause(pstBuf, nRejectCause);
 }
-void MBCP_REVOKE::SetIndicator(char cIndicator){
+void MBCP_REVOKE::SetstrRejectCause(const char *szRejectCause){
+	_MBCP_FLOOR_REJECTCAUSE *pstBuf = &this->pstMsg.stPayload.stFloor_Revoke.RejectCause;
+	__SetstrRejectCause(pstBuf, szRejectCause);
+}
+void MBCP_REVOKE::SetIndicator(const char *szIndicator){
 	_MBCP_FLOOR_INDICATOR *pstBuf = &this->pstMsg.stPayload.stFloor_Revoke.Indicator;
-	__SetIndicator(pstBuf, cIndicator);
+	__SetIndicator(pstBuf, szIndicator);
 }
 
 std::string MBCP_REVOKE::GetDump(){
@@ -1034,8 +2205,10 @@ int MBCP_REVOKE::__Encode( _MBCP_MSG *pstMsg, char *pcBuf)
 
 
 MBCP_TAKEN::MBCP_TAKEN(){
-    this->nMsgName = MBCP_MSGNAME_FLOOR_TAKEN; 
-	SetHeader(MBCP_FLOOR_TAKEN);
+    this->nMsgName = MBCP_FLOOR_TAKEN; 
+}
+MBCP_TAKEN::MBCP_TAKEN(char *szBuf, int nBufLen) : MBCP(szBuf, nBufLen) {
+    this->nMsgName = MBCP_FLOOR_TAKEN; 
 }
 MBCP_TAKEN::~MBCP_TAKEN(){
 
@@ -1053,9 +2226,9 @@ void MBCP_TAKEN::SetUserId( const char *szUserId){
 	_MBCP_USER_ID *pstBuf = &this->pstMsg.stPayload.stFloor_Taken.UserID;
 	__SetUserId(pstBuf, szUserId);
 }
-void MBCP_TAKEN::SetIndicator(char cIndicator){
+void MBCP_TAKEN::SetIndicator(const char *szIndicator){
 	_MBCP_FLOOR_INDICATOR *pstBuf = &this->pstMsg.stPayload.stFloor_Taken.Indicator;
-	__SetIndicator(pstBuf, cIndicator);
+	__SetIndicator(pstBuf, szIndicator);
 }
 void MBCP_TAKEN::SetSequenceNumber(int nSeq){
 	_MBCP_MSG_SEQ_NUMBER *pstBuf = &this->pstMsg.stPayload.stFloor_Taken.SeqNum;
@@ -1115,206 +2288,123 @@ int MBCP_TAKEN::__Encode( _MBCP_MSG *pstMsg, char *pcBuf)
 
 	return nOffset;
 }
-// int SIM_Floor_Taken_Encoder( _MBCP_MSG *pstMsg, char *pcBuf)
-// {
-// 	int nOffset = 0;
 
-// 	_MBCP_Floor_Taken *pstFloor_Taken = &pstMsg->stPayload.stFloor_Taken;
-// 	char *ptr = pcBuf;
+MBCP_ACK::MBCP_ACK(){
+    this->nMsgName = MBCP_FLOOR_ACK; 
+}
+MBCP_ACK::MBCP_ACK(char *szBuf, int nBufLen) : MBCP(szBuf, nBufLen) {
+    this->nMsgName = MBCP_FLOOR_ACK; 
+}
+MBCP_ACK::~MBCP_ACK(){
 
-// 	if(pstFloor_Taken->Grant_party_Identity.bGrant_party_Identity == TRUE){
-// 		_MBCP_GRANT_PARTY_IDENTITY *pstGrantPartyIdentity = &pstFloor_Taken->Grant_party_Identity;
-// 		nOffset += __Encode_Granted_Party_Identity_Field(pstGrantPartyIdentity, ptr + nOffset);
-// 	}
+}
 
-// 	if(pstFloor_Taken->Grant_Permission_Req.bPermission_Request_Floor_Value == TRUE){
-// 		_MBCP_PERMISSION_REQUEST_FLOOR_FIELD *pstPermissionRequestFloorField = &pstFloor_Taken->Grant_Permission_Req;
-// 		nOffset += __Encode_Permission_to_Request(pstPermissionRequestFloorField, ptr + nOffset);
-// 	}
+void MBCP_ACK::SetSource(int nSource){
+	_MBCP_SOURCE *pstBuf = &this->pstMsg.stPayload.stAck.Source;
+	__SetSource(pstBuf, nSource);
+}
+void MBCP_ACK::SetMessageType(int nMsgName){
+	_MBCP_MSG_TYPE *pstBuf = &this->pstMsg.stPayload.stAck.MsgType;
+	__SetMessageType(pstBuf, nMsgName);
+}
 
-// 	if(pstFloor_Taken->UserID.bUserID == TRUE){
-// 		_MBCP_USER_ID *pstUserId = &pstFloor_Taken->UserID;
-// 		nOffset += __Encode_UserID(pstUserId, ptr + nOffset);
-// 	}
+std::string MBCP_ACK::GetDump(){
+	std::string dump = MBCP::GetDump();
 
-// 	if(pstFloor_Taken->SeqNum.bSeqNum == TRUE){
-// 		_MBCP_MSG_SEQ_NUMBER *pstSeqNumber = &pstFloor_Taken->SeqNum;
-// 		nOffset += __Encode_Seq_Number(pstSeqNumber, ptr + nOffset);
-// 	}
+    _MBCP_Ack *pstMbcp = &this->pstMsg.stPayload.stAck;
 
-// 	if(pstFloor_Taken->Track_Info.bTrackInfo == TRUE){
-// 		_MBCP_TRACK_INFO *pstTrackInfo = &pstFloor_Taken->Track_Info;
-// 		nOffset += __Encode_Track_Info(pstTrackInfo, ptr + nOffset);
-// 	}
+	dump += Str_MBCP_Source(&pstMbcp->Source);
+	dump += Str_MBCP_MsgType(&pstMbcp->MsgType);
 
-// 	if(pstFloor_Taken->Indicator.cIsBeFlag == TRUE){
-// 		_MBCP_FLOOR_INDICATOR *pstIndicator = &pstFloor_Taken->Indicator;
-// 		nOffset += __Encode_Indicator(pstIndicator, ptr + nOffset);
-// 	}
+	return dump;
+}
 
-// 	return nOffset;
-// }
+int MBCP_ACK::__Encode( _MBCP_MSG *pstMsg, char *pcBuf)
+{
+	int nOffset = 0;
 
-// int SIM_Floor_Granted_Encoder( _MBCP_MSG *pstMsg, char *pcBuf)
-// {
-// 	int nOffset = 0;
+	_MBCP_Ack *pstAck = &pstMsg->stPayload.stAck;
+	char *ptr = pcBuf;
 
-// 	_MBCP_Floor_Granted *pstFloor_Granted = &pstMsg->stPayload.stFloor_Granted;
-// 	char *ptr = pcBuf;
+	if(pstAck->Source.bSource == TRUE){
+		_MBCP_SOURCE *pstSource = &pstAck->Source;
+		nOffset += __Encode_SourceField(pstSource, ptr + nOffset);
+	}
 
-// 	if(pstFloor_Granted->Duration.bDuration == TRUE){
-// 		_MBCP_FLOOR_DURATION *pstDuration = &pstFloor_Granted->Duration;
-// 		nOffset += __Encode_Duration(pstDuration, ptr + nOffset);
-// 	}
+	if(pstAck->MsgType.bMsgType == TRUE){
+		_MBCP_MSG_TYPE *pstMsgType = &pstAck->MsgType;
+		nOffset += __Encode_MsgType(pstMsgType, ptr + nOffset);
+	}
 
-// 	if(pstFloor_Granted->Priority.bPriority == TRUE){
-// 		_MBCP_FLOOR_PRIORITY *pstPriority = &pstFloor_Granted->Priority;
-// 		nOffset += __Encode_Priority(pstPriority, ptr + nOffset);
-// 	}
+	if(pstAck->Track_Info.bTrackInfo == TRUE){
+		_MBCP_TRACK_INFO *pstTrackInfo = &pstAck->Track_Info;
+		nOffset += __Encode_Track_Info(pstTrackInfo, ptr + nOffset);
+	}
 
-// 	if(pstFloor_Granted->UserID.bUserID == TRUE){
-// 		_MBCP_USER_ID *pstUserId = &pstFloor_Granted->UserID;
-// 		nOffset += __Encode_UserID(pstUserId, ptr + nOffset);
-// 	}
+	return nOffset;
+}
 
-// 	/* The Queue Size field is only applicable in off-network  */
-// 	//_MBCP_QUEUE_SIZE *pstQueueSize = &pstFloor_Granted->QueueSize;
-// 	//nOffset += __Encode_Queue_Size(pstQueueSize, ptr + nOffset);
 
-// 	if(pstFloor_Granted->QueueUserID.bUserID == TRUE){
-// 		_MBCP_QUEUE_USER_ID *pstQueueUserID = &pstFloor_Granted->QueueUserID;
-// 		nOffset += __Encode_Queue_UserID(pstQueueUserID, ptr + nOffset);
-// 	}
+MBCP_QUEUE_INFO::MBCP_QUEUE_INFO(){
+	this->nMsgName = MBCP_FLOOR_QUEUE_POSITION_INFO; 
+}
+MBCP_QUEUE_INFO::MBCP_QUEUE_INFO(char *szBuf, int nBufLen) : MBCP(szBuf, nBufLen) {
+    this->nMsgName = MBCP_FLOOR_QUEUE_POSITION_INFO; 
+}
+MBCP_QUEUE_INFO::~MBCP_QUEUE_INFO(){
 
-// 	if(pstFloor_Granted->QueueInfo.bQUserInfo == TRUE){
-// 		_MBCP_FLOOR_QUEUEINFO *pstQueueInfo = &pstFloor_Granted->QueueInfo;
-// 		nOffset += __Encode_Queue_Info(pstQueueInfo, ptr + nOffset);
-// 	}
+}
+void MBCP_QUEUE_INFO::SetIndicator(const char *szIndicator){
+	_MBCP_FLOOR_INDICATOR *pstBuf = &this->pstMsg.stPayload.stFloor_Q_Position_Info.Indicator;
+	__SetIndicator(pstBuf, szIndicator);
+}
+void MBCP_QUEUE_INFO::SetUserId( const char *szUserId){
+	_MBCP_USER_ID *pstBuf = &this->pstMsg.stPayload.stFloor_Q_Position_Info.UserID;
+	__SetUserId(pstBuf, szUserId);
+}
 
-// 	if(pstFloor_Granted->Track_Info.bTrackInfo == TRUE){
-// 		_MBCP_TRACK_INFO *pstTrackInfo = &pstFloor_Granted->Track_Info;
-// 		nOffset += __Encode_Track_Info(pstTrackInfo, ptr + nOffset);
-// 	}
+std::string MBCP_QUEUE_INFO::GetDump(){
+	std::string dump = MBCP::GetDump();
 
-// 	if(pstFloor_Granted->Indicator.cIsBeFlag == TRUE){
-// 		_MBCP_FLOOR_INDICATOR *pstIndicator = &pstFloor_Granted->Indicator;
-// 		nOffset += __Encode_Indicator(pstIndicator, ptr + nOffset);
-// 	}
+    _MBCP_Floor_Queue_Position_Info *pstMbcp = &this->pstMsg.stPayload.stFloor_Q_Position_Info;
 
-// 	return nOffset;
-// }
+	dump += Str_MBCP_UserID(&pstMbcp->UserID);
+	dump += Str_MBCP_Indicator(&pstMbcp->Indicator);
 
-// int SIM_Floor_Deny_Encoder( _MBCP_MSG *pstMsg, char *pcBuf)
-// {
-// 	int nOffset = 0;
+	return dump;
+}
 
-// 	_MBCP_Floor_Deny *pstDeny = &pstMsg->stPayload.stFloor_Deny;
-// 	char *ptr = pcBuf;
+int MBCP_QUEUE_INFO::__Encode( _MBCP_MSG *pstMsg, char *pcBuf)
+{
+	int nOffset = 0;
 
-// 	if(pstDeny->RejectCause.bRejectCause == TRUE){
-// 		_MBCP_FLOOR_REJECTCAUSE *pstRejectCause = &pstDeny->RejectCause;
-// 		nOffset += __Encode_RejectCause(pstRejectCause, ptr + nOffset);
-// 	}
+	_MBCP_Floor_Queue_Position_Info *pstQueuePositionInfoMsg = &pstMsg->stPayload.stFloor_Q_Position_Info;
+	char *ptr = pcBuf;
 
-// 	if(pstDeny->UserID.bUserID == TRUE){
-// 		_MBCP_USER_ID *pstUserId = &pstDeny->UserID;
-// 		nOffset += __Encode_UserID(pstUserId, ptr + nOffset);
-// 	}
+	if(pstQueuePositionInfoMsg->UserID.bUserID == TRUE){
+		_MBCP_USER_ID *pstUserId = &pstQueuePositionInfoMsg->UserID;
+		nOffset += __Encode_UserID(pstUserId, ptr + nOffset);
+	}
 
-// 	if(pstDeny->Track_Info.bTrackInfo == TRUE){
-// 		_MBCP_TRACK_INFO *pstTrackInfo = &pstDeny->Track_Info;
-// 		nOffset += __Encode_Track_Info(pstTrackInfo, ptr + nOffset);
-// 	}
+	if(pstQueuePositionInfoMsg->QueueUserID.bUserID == TRUE){
+		_MBCP_QUEUE_USER_ID *pstQueueUserID = &pstQueuePositionInfoMsg->QueueUserID;
+		nOffset += __Encode_Queue_UserID(pstQueueUserID, ptr + nOffset);
+	}
 
-// 	if(pstDeny->Indicator.cIsBeFlag == TRUE){
-// 		_MBCP_FLOOR_INDICATOR *pstIndicator = &pstDeny->Indicator;
-// 		nOffset += __Encode_Indicator(pstIndicator, ptr + nOffset);
-// 	}
+	if(pstQueuePositionInfoMsg->QueueInfo.bQUserInfo == TRUE){
+		_MBCP_FLOOR_QUEUEINFO *pstQueueInfo = &pstQueuePositionInfoMsg->QueueInfo;
+		nOffset += __Encode_Queue_Info(pstQueueInfo, ptr + nOffset);
+	}
 
-// 	return nOffset;
-// }
+	if(pstQueuePositionInfoMsg->Track_Info.bTrackInfo == TRUE){
+		_MBCP_TRACK_INFO *pstTrackInfo = &pstQueuePositionInfoMsg->Track_Info;
+		nOffset += __Encode_Track_Info(pstTrackInfo, ptr + nOffset);
+	}
 
-// int SIM_Floor_Revoke_Encoder( _MBCP_MSG *pstMsg, char *pcBuf)
-// {
-// 	int nOffset = 0;
+	if(pstQueuePositionInfoMsg->Indicator.cIsBeFlag == TRUE){
+		_MBCP_FLOOR_INDICATOR *pstIndicator = &pstQueuePositionInfoMsg->Indicator;
+		nOffset += __Encode_Indicator(pstIndicator, ptr + nOffset);
+	}
 
-// 	_MBCP_Floor_Revoke *pstRevoke = &pstMsg->stPayload.stFloor_Revoke;
-// 	char *ptr = pcBuf;
-
-// 	if(pstRevoke->RejectCause.bRejectCause == TRUE){
-// 		_MBCP_FLOOR_REJECTCAUSE *pstRejectCause = &pstRevoke->RejectCause;
-// 		nOffset += __Encode_RejectCause(pstRejectCause, ptr + nOffset);
-// 	}
-
-// 	if(pstRevoke->Track_Info.bTrackInfo == TRUE){
-// 		_MBCP_TRACK_INFO *pstTrackInfo = &pstRevoke->Track_Info;
-// 		nOffset += __Encode_Track_Info(pstTrackInfo, ptr + nOffset);
-// 	}
-
-// 	if(pstRevoke->Indicator.cIsBeFlag == TRUE){
-// 		_MBCP_FLOOR_INDICATOR *pstIndicator = &pstRevoke->Indicator;
-// 		nOffset += __Encode_Indicator(pstIndicator, ptr + nOffset);
-// 	}
-
-// 	return nOffset;
-// }
-
-// int SIM_Ack_Encoder( _MBCP_MSG *pstMsg, char *pcBuf)
-// {
-// 	int nOffset = 0;
-
-// 	_MBCP_Ack *pstAck = &pstMsg->stPayload.stAck;
-// 	char *ptr = pcBuf;
-
-// 	if(pstAck->Source.bSource == TRUE){
-// 		_MBCP_SOURCE *pstSource = &pstAck->Source;
-// 		nOffset += __Encode_SourceField(pstSource, ptr + nOffset);
-// 	}
-
-// 	if(pstAck->MsgType.bMsgType == TRUE){
-// 		_MBCP_MSG_TYPE *pstMsgType = &pstAck->MsgType;
-// 		nOffset += __Encode_MsgType(pstMsgType, ptr + nOffset);
-// 	}
-
-// 	if(pstAck->Track_Info.bTrackInfo == TRUE){
-// 		_MBCP_TRACK_INFO *pstTrackInfo = &pstAck->Track_Info;
-// 		nOffset += __Encode_Track_Info(pstTrackInfo, ptr + nOffset);
-// 	}
-
-// 	return nOffset;
-// }
-
-// int SIM_Floor_Queue_Position_Info_Encoder( _MBCP_MSG *pstMsg, char *pcBuf)
-// {
-// 	int nOffset = 0;
-
-// 	_MBCP_Floor_Queue_Position_Info *pstQueuePositionInfoMsg = &pstMsg->stPayload.stFloor_Q_Position_Info;
-// 	char *ptr = pcBuf;
-
-// 	if(pstQueuePositionInfoMsg->UserID.bUserID == TRUE){
-// 		_MBCP_USER_ID *pstUserId = &pstQueuePositionInfoMsg->UserID;
-// 		nOffset += __Encode_UserID(pstUserId, ptr + nOffset);
-// 	}
-
-// 	if(pstQueuePositionInfoMsg->QueueUserID.bUserID == TRUE){
-// 		_MBCP_QUEUE_USER_ID *pstQueueUserID = &pstQueuePositionInfoMsg->QueueUserID;
-// 		nOffset += __Encode_Queue_UserID(pstQueueUserID, ptr + nOffset);
-// 	}
-
-// 	if(pstQueuePositionInfoMsg->QueueInfo.bQUserInfo == TRUE){
-// 		_MBCP_FLOOR_QUEUEINFO *pstQueueInfo = &pstQueuePositionInfoMsg->QueueInfo;
-// 		nOffset += __Encode_Queue_Info(pstQueueInfo, ptr + nOffset);
-// 	}
-
-// 	if(pstQueuePositionInfoMsg->Track_Info.bTrackInfo == TRUE){
-// 		_MBCP_TRACK_INFO *pstTrackInfo = &pstQueuePositionInfoMsg->Track_Info;
-// 		nOffset += __Encode_Track_Info(pstTrackInfo, ptr + nOffset);
-// 	}
-
-// 	if(pstQueuePositionInfoMsg->Indicator.cIsBeFlag == TRUE){
-// 		_MBCP_FLOOR_INDICATOR *pstIndicator = &pstQueuePositionInfoMsg->Indicator;
-// 		nOffset += __Encode_Indicator(pstIndicator, ptr + nOffset);
-// 	}
-
-// 	return nOffset;
-// }
+	return nOffset;
+}

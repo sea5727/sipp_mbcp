@@ -110,6 +110,8 @@ message::message(int index, const char *desc)
     response_txn = 0;
     ack_txn = 0;
     recv_response_for_cseq_method_list = NULL; // free on exit
+
+    send_mbcp = NULL;
 }
 
 message::~message()
@@ -117,6 +119,7 @@ message::~message()
     delete(pause_distribution);
     free(pause_desc);
     delete(send_scheme);
+    delete(send_mbcp);
     free(recv_request);
     if (regexp_compile != NULL) {
         regfree(regexp_compile);
@@ -702,53 +705,104 @@ scenario::scenario(char * filename, int deflt)
         char * ptr;
         scenario_file_cursor ++;
 
-        if(!strcmp(elem, "send_mbcp")){
-            printf("\n\n\n\n\n\n\n\n\n\n nmbcp nmbcp  nmbcp \n\n\n\n\n\n\n\n");
-            ptr = xp_get_string("port", "mbcp listen port");
-            printf("port:%s\n", ptr);
-            free(ptr);
-            if((cptr = xp_get_value("message"))) {
-                printf("message:%s\n", cptr);
+        if(!strcmp(elem, "mbcp_send")){
+            message *curmsg = new message(messages.size(), name ? name : "unknown scenario");
+            messages.push_back(curmsg);
+
+            curmsg->M_type = MSG_TYPE_MBCP_SEND;
+
+            ptr = xp_get_string("Message", "mbcp message name");
+            curmsg->recv_request = strdup(ptr);
+            MBCP *mbcp;
+            printf("mbcp Message=%s\n", ptr);
+            if(!strcmp(ptr, "REQUEST")){
+                curmsg->send_mbcp =  new MBCP_REQUEST();
+                mbcp = curmsg->send_mbcp;
             }
-            ptr = xp_get_string("test", "mbcp test");
-            printf("test:%s\n", ptr);
+            else if(!strcmp(ptr, "RELEASE")){
+                curmsg->send_mbcp =  new MBCP_RELEASE();
+                mbcp = curmsg->send_mbcp;
+            }
+            else if(!strcmp(ptr, "IDLE")){
+                curmsg->send_mbcp =  new MBCP_IDLE();
+                mbcp = curmsg->send_mbcp;
+            }
+            else if(!strcmp(ptr, "GRANTED")){
+                curmsg->send_mbcp =  new MBCP_GRANTED();
+                mbcp = curmsg->send_mbcp;
+            }
+            else if(!strcmp(ptr, "DENY")){
+                curmsg->send_mbcp =  new MBCP_DENY();
+                mbcp = curmsg->send_mbcp;
+            }
+            else if(!strcmp(ptr, "REVOKE")){
+                curmsg->send_mbcp =  new MBCP_REVOKE();
+                mbcp = curmsg->send_mbcp;
+            }
+            else if(!strcmp(ptr, "TAKEN")){
+                curmsg->send_mbcp =  new MBCP_TAKEN();
+                mbcp = curmsg->send_mbcp;
+            }
+            else if(!strcmp(ptr, "ACK")){
+                curmsg->send_mbcp =  new MBCP_ACK();
+                mbcp = curmsg->send_mbcp;
+            }
+            else if(!strcmp(ptr, "QUEUE_INFO")){
+                curmsg->send_mbcp =  new MBCP_QUEUE_INFO();
+                mbcp = curmsg->send_mbcp;
+            }else {
+                ERROR("%s is missing the required '%s' parameter.", "mbcp", "correct mbcp message name");
+            }
+            printf("mbcp message : %s\n", ptr);
             free(ptr);
-            MBCP testMbcp;
-            MBCP_IDLE idleMBCP;
-            idleMBCP.SetSequenceNumber(12345);
-            idleMBCP.SetIndicator('C');
-            idleMBCP.Encode();
-            printf("%s\n", idleMBCP.GetDump().c_str());
-            MBCP_IDLE idleMBCP2;
-            idleMBCP2.SetSequenceNumber(1000);
-            idleMBCP2.SetIndicator('A');
-            MBCP *test = (MBCP *)&idleMBCP2;
-            test->Encode();
-            printf("%s\n", test->GetDump().c_str());
+            if((cptr = xp_get_value("Sequence"))) {
+                printf("Sequence %s\n", cptr);
+                mbcp->SetSequenceNumber(atoi(cptr));
+            }
+            if((cptr = xp_get_value("Indicator"))) {
+                mbcp->SetIndicator(cptr);
+            }
+            if((cptr = xp_get_value("Duration"))) {
+                mbcp->SetDuration(atoi(cptr));
+            }
+            if((cptr = xp_get_value("Priority"))) {
+                mbcp->SetPriority(atoi(cptr));
+            }
+            if((cptr = xp_get_value("UserId"))) {
+                printf("Set User Id %s\n", cptr);
+                mbcp->SetUserId(cptr);
+            }
+            if((cptr = xp_get_value("QueueSize"))) {
+                mbcp->SetQueueSize(atoi(cptr));
+            }
+            if((cptr = xp_get_value("nRejectCause"))) {
+                mbcp->SetnRejectCause(atoi(cptr));
+            }
+            if((cptr = xp_get_value("strRejectCause"))) {
+                mbcp->SetstrRejectCause(cptr);
+            }
+            if((cptr = xp_get_value("GrantPartyId"))) {
+                mbcp->SetGrantPartyId(cptr);
+            }
+            if((cptr = xp_get_value("PermissionToReq"))) {
+                mbcp->SetGrantPermissionRequest(atoi(cptr));
+            }
+            if((cptr = xp_get_value("Source"))) {
+                mbcp->SetSource(atoi(cptr));
+            }
+            if((cptr = xp_get_value("MessageType"))) {
+                mbcp->SetMessageType(atoi(cptr));
+            }
+        }
+        else if(!strcmp(elem, "mbcp_recv")){
 
+            message *curmsg = new message(messages.size(), name ? name : "unknown scenario");
+            messages.push_back(curmsg);
 
-
-            MBCP_GRANTED testTaken;
-            testTaken.SetDuration(1);
-            testTaken.SetPriority(2);
-            testTaken.SetUserId("Jdin@j-din.com");
-            testTaken.Encode();
-            printf("Taken dump : %s\n", testTaken.GetDump().c_str());
-
-
-            MBCP_DENY testDeny;
-            testDeny.SetRejectCause(100);
-            testDeny.SetUserId("testDeny@j-din.com");
-            testDeny.SetIndicator('H');
-            testDeny.Encode();
-            printf("Deny dump : %s\n", testDeny.GetDump().c_str());
-
-            MBCP_REVOKE testRevoke;
-            testRevoke.SetRejectCause(1000);
-            testRevoke.SetIndicator('E');
-            testRevoke.Encode();
-            printf("testRevoke dump : %s\n", testRevoke.GetDump().c_str());
-
+            ptr = xp_get_string("Message", "mbcp message name");
+            curmsg->recv_request = strdup(ptr);
+            curmsg->M_type = MSG_TYPE_MBCP_RECV;
+            free(ptr);
         }
         else if(!strcmp(elem, "CallLengthRepartition")) {
             ptr = xp_get_string("value", "CallLengthRepartition");
@@ -844,6 +898,7 @@ scenario::scenario(char * filename, int deflt)
             messages.push_back(curmsg);
 
             if(!strcmp(elem, "send")) {
+                printf("[TESTDEBBUG] Scenario Send... messages=%p\n", &messages);
                 checkOptionalRecv(elem, scenario_file_cursor);
                 curmsg->M_type = MSG_TYPE_SEND;
                 /* Sent messages descriptions */
@@ -944,21 +999,24 @@ scenario::scenario(char * filename, int deflt)
                 }
 
                 if ((cptr = xp_get_value("regexp_match"))) {
+                    printf("recv!!?? regexp_match??\n");
                     if (!strcmp(cptr, "true")) {
                         curmsg->regexp_match = 1;
                     }
                 }
 
                 curmsg->timeout = xp_get_long("timeout", "message timeout", 0);
-
+                printf("recv!!?? curmsg->timeout?? %llu\n", curmsg->timeout);
                 /* record the route set  */
                 /* TODO disallow optional and rrs to coexist? */
                 if ((cptr = xp_get_value("rrs"))) {
+                    printf("recv!!?? rrs??\n");
                     curmsg->bShouldRecordRoutes = get_bool(cptr, "record route set");
                 }
 
                 /* record the authentication credentials  */
                 if ((cptr = xp_get_value("auth"))) {
+                    printf("recv!!?? auth??\n");
                     bool temp = get_bool(cptr, "message authentication");
                     curmsg->bShouldAuthenticate = temp;
                 }
@@ -1087,8 +1145,10 @@ scenario::scenario(char * filename, int deflt)
 
 void scenario::runInit()
 {
+    printf("scenario::runInit.. \n");
     call *initcall;
     if (initmessages.size() > 0) {
+        printf("initmessages.size() > 0 ??\n");
         initcall = new call(main_scenario, NULL, NULL, "///main-init", 0, false, false, true);
         initcall->run();
     }
@@ -3393,3 +3453,4 @@ const char * default_scenario [] = {
     "\n"
     "</scenario>\n",
 };
+

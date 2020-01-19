@@ -628,7 +628,25 @@ void ScreenPrinter::draw_scenario_screen()
                      curmsg->M_nbCmdSent,
                      "",
                      "");
-        } else {
+        }
+        else if ( curmsg->M_type == MSG_TYPE_MBCP_SEND){
+            buf_len += snprintf(buf + buf_len, bufsiz - buf_len, "  ----------> %-10s ", curmsg->recv_request);
+            if (creationMode == MODE_SERVER) {
+                buf_len +=
+                    snprintf(buf + buf_len, bufsiz - buf_len,
+                             "  ----------> %-10s ", curmsg->recv_request);
+            } else {
+                buf_len +=
+                    snprintf(buf + buf_len, bufsiz - buf_len, "  %10s <---------- ",
+                             curmsg->recv_request);
+            }
+
+            printf("draw_scenario_screen??MSG_TYPE_MBCP_SEND  (%s %d)\n", __func__ , __LINE__);
+        }
+        else if ( curmsg->M_type == MSG_TYPE_MBCP_RECV){
+            printf("draw_scenario_screen??MSG_TYPE_MBCP_RECV (%s %d)\n", __func__ , __LINE__);
+        }
+        else {
             ERROR("Scenario command not implemented in display");
         }
 
@@ -827,11 +845,13 @@ void ScreenPrinter::draw_vars_screen()
         if (actions != NULL) {
             switch (curmsg->M_type) {
             case MSG_TYPE_RECV:
+                printf("MSG_TYPE_RECV!!! (%s %d)\n", __func__, __LINE__);
                 snprintf(buf, bufsiz, "=> Message[%u] (Receive Message) - "
                          "[%d] action(s) defined :",
                          i, actions->getActionSize());
                 break;
             case MSG_TYPE_RECVCMD:
+                printf("MSG_TYPE_RECVCMD!!! (%s %d)\n", __func__, __LINE__);
                 snprintf(buf, bufsiz, "=> Message[%u] (Receive Command Message) - "
                          "[%d] action(s) defined :",
                          i, actions->getActionSize());

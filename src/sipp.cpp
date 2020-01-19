@@ -49,6 +49,7 @@
 extern char** environ;
 
 #define GLOBALS_FULL_DEFINITION
+
 #include "sipp.hpp"
 
 #include "sip_parser.hpp"
@@ -57,9 +58,11 @@ extern char** environ;
 #include "assert.h"
 #include "config.h"
 #include "version.h"
+#include "mbcp.h"
 
 extern SIPpSocket *ctrl_socket;
 extern SIPpSocket *stdin_socket;
+std::atomic<int>   mbcp_port;
 
 /* These could be local to main, but for the option processing table. */
 static int argiFileName;
@@ -161,6 +164,7 @@ struct sipp_option options_table[] = {
         "- cn: un + compression (only if compression plugin loaded).  This plugin is not provided with SIPp.\n"
         , SIPP_OPTION_TRANSPORT, NULL, 1
     },
+    {"mbcp_start_port", "Set the mbcp start port number. Default is 20000.", SIPP_OPTION_INT, &mbcp_start_port, 1},
     {"i", "Set the local IP address for 'Contact:','Via:', and 'From:' headers. Default is primary host IP address.\n", SIPP_OPTION_IP, local_ip, 1},
     {"p", "Set the local port number.  Default is a random free port chosen by the system.", SIPP_OPTION_INT, &user_port, 1},
     {"bind_local", "Bind socket to local IP address, i.e. the local IP address is used as the source IP address.  If SIPp runs in server mode it will only listen on the local IP address instead of all IP addresses.", SIPP_OPTION_SETFLAG, &bind_local, 1},
@@ -2099,6 +2103,12 @@ int main(int argc, char *argv[])
         }
     }
 
+    /* Creating second RTP echo thread for video. */
+    pthread_t pthread4_id = 0;
+    if (pthread_create(&pthread4_id, NULL, mbcp_thread, NULL) == -1) {
+        ERROR_NO("Unable to create mbcp thread");
+    }
+    
     traffic_thread();
 
     /* Cancel and join other threads. */
@@ -2124,3 +2134,4 @@ int main(int argc, char *argv[])
     free(scenario_path);
     sipp_exit(EXIT_TEST_RES_UNKNOWN);
 }
+

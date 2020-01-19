@@ -9,6 +9,8 @@
 #define INC_CMN_LIB_UTIL_MBCP_MBCP_MSG_H_
 
 #include<string>
+#include<atomic>
+
 
 //===================== J-din Type ========================//
 #define PUT_16(p,v) ((p)[0]=((v)>>8)&0xff,(p)[1]=(v)&0xff)
@@ -49,6 +51,12 @@ typedef	enum {
     #define FALSE 0
 #endif
 
+#define MBCP_MAXFDS 65536
+#define EPOLL_SIZE 100 // ?
+#define MBCP_BUFFER_SIZE 8096
+extern std::atomic<int> mbcp_epoll;
+extern char map_callid_and_mbcpport[MBCP_MAXFDS][64];
+void* mbcp_thread(void* param);
 //===================================================================================================///
 enum _enMBCP_MsgName{
 	MBCP_MSGNAME_FLOOR_REQUEST = 0,
@@ -240,6 +248,12 @@ typedef struct _TagMBCP_UserID{
 /* Queue_Size */
 typedef struct _TagMBCP_Queue_Size{
 	int nQueueSize;
+
+	bool bQueueSize;
+
+	void init(){
+		bQueueSize = FALSE;
+	}
 }_MBCP_QUEUE_SIZE;
 
 /* Msg_Seq_Number */
@@ -280,7 +294,7 @@ typedef struct _TagMBCP_Track_Info{
 	int nParticipant_TypeLen;
 	char cParticipant_Type[255];
 	int nParticipant_Reference_Count;
-	u_int nFloor_Participant_Reference[32];
+	unsigned int nFloor_Participant_Reference[32];
 
 	bool bTrackInfo;
 
@@ -445,7 +459,7 @@ typedef struct TagMBCP_Sts_Info_Context{
     char 	*pszPeer_IP;
     int 	nPeer_Port;
     int 	nCB_WorkerID;
-    u_int unMy_SSRC;
+    unsigned int  unMy_SSRC;
 }_MBCP_STS_INFO_CONTEXT;
 
 typedef struct TagMBCP_UserSts_Idle{
@@ -456,7 +470,7 @@ typedef struct TagMBCP_UserSts_Idle{
 
 typedef struct TagMBCP_UserSts_Taken{
 	_MBCP_STS_INFO_CONTEXT stContext;
-    u_int unTalker_SSRC;
+    unsigned int  unTalker_SSRC;
     Boolean enPermissionToReqFloor;
     _MBCP_FLOOR_INDICATOR stFloorIndicator;
 }_MBCP_USER_STS_TAKEN;

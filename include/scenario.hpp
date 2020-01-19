@@ -30,6 +30,7 @@
 #include "variables.hpp"
 #include "message.hpp"
 #include "stat.hpp"
+#include "mbcp.hpp"
 
 
 #define MSG_TYPE_SENDCMD   0
@@ -40,6 +41,8 @@
 #define MSG_TYPE_PAUSE     4
 #define MSG_TYPE_NOP       5
 
+#define MSG_TYPE_MBCP_SEND 101
+#define MSG_TYPE_MBCP_RECV 102
 #define MODE_CLIENT        0
 #define MODE_SERVER        1
 
@@ -77,6 +80,9 @@ public:
 
     /* should collect authentication info? */
     bool           bShouldAuthenticate;
+
+    /* If this is mbcp send*/
+    MBCP           *send_mbcp;
 
     /* If this is a send */
     SendingMessage *send_scheme;

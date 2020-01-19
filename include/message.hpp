@@ -45,7 +45,7 @@ class scenario;
 struct MessageComponent;
 
 typedef enum {
-    E_Message_Literal,
+    E_Message_Literal = 0,
     E_Message_Remote_IP,
     E_Message_Remote_Host,
     E_Message_Remote_Port,
@@ -86,7 +86,8 @@ typedef enum {
     E_Message_Date,
     E_Message_SippVersion,
     E_Message_File,
-    E_Message_Custom
+    E_Message_Custom,
+    E_Message_Mbcp_Port
 #ifdef RTP_STREAM
     ,
     E_Message_RTPStream_Audio_Port,

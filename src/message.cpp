@@ -66,6 +66,7 @@ struct KeywordMap SimpleKeywords[] = {
     {"rtpstream_audio_port", E_Message_RTPStream_Audio_Port },
     {"rtpstream_video_port", E_Message_RTPStream_Video_Port },
 #endif
+    {"mbcp_port", E_Message_Mbcp_Port },
     {"media_port", E_Message_Media_Port },
     {"media_ip_type", E_Message_Media_IP_Type },
     {"call_number", E_Message_Call_Number },

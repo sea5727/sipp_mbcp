@@ -81,6 +81,7 @@ endif(USE_SCTP)
 add_definitions("-DRTP_STREAM")
 
 # add the executable
+#link_directories("${PROJECT_SOURCE_DIR}/lib") #TESTDEBUG
 link_directories("/usr/local/lib")
 add_executable(sipp ${all_SRCS} "${PROJECT_SOURCE_DIR}/src/sipp.cpp")
 add_executable(sipp_unittest EXCLUDE_FROM_ALL ${all_SRCS} "${PROJECT_SOURCE_DIR}/src/sipp_unittest.cpp")
@@ -126,5 +127,7 @@ if(USE_SCTP)
     target_link_libraries(sipp_unittest ${SCTP_LIBRARY})
   endif()
 endif()
+
+# target_link_libraries(sipp mbcp)#TESTDEBUG
 
 install(TARGETS sipp DESTINATION bin)

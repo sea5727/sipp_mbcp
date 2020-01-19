@@ -138,6 +138,7 @@ bool CallGenerationTask::run()
 
 
     while(calls_to_open--) {
+        //TESTDEBUG CallGenerationTask
         /* Associate a user with this call, if we are in users mode. */
         int userid = 0;
         if (users >= 0) {
@@ -147,6 +148,7 @@ bool CallGenerationTask::run()
 
         // Adding a new outgoing call
         main_scenario->stats->computeStat(CStat::E_CREATE_OUTGOING_CALL);
+        char test[10];
         call* call_ptr = call::add_call(userid,
                                          local_ip_is_ipv6,
                                          use_remote_sending_addr ? &remote_sending_sockaddr : &remote_sockaddr);

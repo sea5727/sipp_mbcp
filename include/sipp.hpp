@@ -22,6 +22,7 @@
 
 /* Std C includes */
 #include "config.h"
+#include <atomic>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -177,6 +178,9 @@ cmd messages are received */
 #endif
 
 /************ User controls and command line options ***********/
+
+extern std::atomic<int>         mbcp_port;
+MAYBE_EXTERN int                mbcp_start_port            DEFVAL(20000);
 
 MAYBE_EXTERN int                duration                DEFVAL(0);
 MAYBE_EXTERN double             rate                    DEFVAL(DEFAULT_RATE);

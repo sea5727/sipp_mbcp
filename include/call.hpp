@@ -62,6 +62,11 @@ struct txnInstanceInfo {
 class call : virtual public task, virtual public listener, public virtual socketowner
 {
 public:
+    SimpleUdpSocket *mbcp_socket;
+    bool mbcp_application;
+    int mbcp_local_port;
+    int mbcp_remote_port;
+    
     /* These are wrappers for various circumstances, (private) init does the real work. */
     //call(char * p_id, int userId, bool ipv6, bool isAutomatic);
     call(const char *p_id, bool use_ipv6, int userId, struct sockaddr_storage *dest);
@@ -322,6 +327,7 @@ protected:
     int _callDebug(const char *fmt, ...) __attribute__((format(printf, 2, 3)));
     char *debugBuffer;
     int debugLength;
+
 };
 
 

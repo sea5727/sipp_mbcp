@@ -1136,8 +1136,8 @@ void process_message(SIPpSocket *socket, char *msg, ssize_t msg_size, struct soc
                   socket->ss_control ? "control " : "",
                   msg_size, msg);
     }
-
     if (!listener_ptr) {
+        TRACE_MSG("![TESTDEBUG] listen_ptr is null (%p)\n", listener_ptr);
         if (thirdPartyMode == MODE_3PCC_CONTROLLER_B || thirdPartyMode == MODE_3PCC_A_PASSIVE ||
                 thirdPartyMode == MODE_MASTER_PASSIVE || thirdPartyMode == MODE_SLAVE) {
             // Adding a new OUTGOING call !
@@ -1240,15 +1240,16 @@ void process_message(SIPpSocket *socket, char *msg, ssize_t msg_size, struct soc
             }
         }
     }
-
+    
     /* If the call was not created above, we just drop this message. */
     if (!listener_ptr) {
         return;
     }
-
     if ((socket == localTwinSippSocket) || (socket == twinSippSocket) || (is_a_local_socket(socket))) {
         listener_ptr -> process_twinSippCom(msg);
     } else {
+        //TESTDEBUG sipp recv부분
+        printf("<recv> process_message...\n");
         listener_ptr -> process_incoming(msg, src);
     }
 }
@@ -2989,7 +2990,6 @@ void SIPpSocket::pollset_process(int wait)
             char msg[SIPP_MAX_MSG_SIZE];
             struct sockaddr_storage src;
             ssize_t len;
-
             len = sock->read_message(msg, sizeof(msg), &src);
             if (len > 0) {
                 process_message(sock, msg, len, &src);
@@ -3028,7 +3028,6 @@ void SIPpSocket::pollset_process(int wait)
             char msg[SIPP_MAX_MSG_SIZE];
             struct sockaddr_storage src;
             ssize_t len;
-
             len = sockets[read_index]->read_message(msg, sizeof(msg), &src);
             if (len > 0) {
                 process_message(sockets[read_index], msg, len, &src);
