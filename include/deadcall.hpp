@@ -6,6 +6,7 @@ public:
     deadcall(const char *id, const char * reason);
     ~deadcall();
 
+    virtual bool mbcp_incoming(MBCP* msg, const struct sockaddr_storage*);
     virtual bool process_incoming(const char* msg, const struct sockaddr_storage *);
     virtual bool process_twinSippCom(char* msg);
 

@@ -83,7 +83,7 @@ public:
 
     /* If this is mbcp send*/
     MBCP           *send_mbcp;
-
+    char           *recv_mbcp_request;
     /* If this is a send */
     SendingMessage *send_scheme;
     unsigned int   retrans_delay;

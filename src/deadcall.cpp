@@ -63,6 +63,11 @@ deadcall::~deadcall()
     free(reason);
 }
 
+bool deadcall::mbcp_incoming(MBCP* mbcp, const struct sockaddr_storage* /*src*/)
+{
+    TRACE_MSG("deadcall::mbcp_incomming\n");
+    return false;
+}
 bool deadcall::process_incoming(const char* msg, const struct sockaddr_storage* /*src*/)
 {
     char buffer[MAX_HEADER_LEN];

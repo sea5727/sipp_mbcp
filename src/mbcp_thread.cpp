@@ -71,6 +71,7 @@ void* mbcp_thread(void* param){
                     DumpMsgBicode(szLogBuffer, recvBuffer, recvLen));
                 if(mbcp){
                     TRACE_MSG("[TESTDEBUG] MBCP:%s\n", mbcp->GetDump().c_str());
+                    call_listener->mbcp_incoming(mbcp, NULL);
                 }
                     
             }

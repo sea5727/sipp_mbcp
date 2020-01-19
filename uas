@@ -116,11 +116,19 @@ Content-Type: application/vnd.3gpp.mcptt-info+xml
         crlf="true">
   </recv>
 
-  <mbcp_recv
-	Message="IDLE"
-	>
-  </mbcp_recv>
 
+  <mbcp_recv Message="IDLE">
+  </mbcp_recv>
+  <mbcp_send Message="REQUEST"
+	UserId="request2@j-din.com">
+  </mbcp_send>
+  <mbcp_recv Message="TAKEN">
+  </mbcp_recv>
+  <mbcp_send Message="REVOKE"
+        strRejectCAuse="test">
+  </mbcp_send>
+
+  
   <recv request="BYE">
   </recv>
 

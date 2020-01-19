@@ -76,6 +76,7 @@ public:
 
     virtual ~call();
 
+    virtual bool mbcp_incoming(MBCP *msg, const struct sockaddr_storage* src = NULL);
     virtual bool process_incoming(const char* msg, const struct sockaddr_storage* src = NULL);
     virtual bool process_twinSippCom(char* msg);
 

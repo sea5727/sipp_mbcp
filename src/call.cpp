@@ -1074,10 +1074,8 @@ char * call::send_scene(int index, int *send_status, int *len)
     }
     
     //TESTDEBUG //시나리오 send
-    TRACE_MSG("[TESTDEBUG] send try %s\n", msg_name);
     *send_status = send_raw(dest, index, *len);
     if(*send_status > 0){
-        TRACE_MSG("[TESTDEBUG] send success %s\n", msg_name);
         if(!strcmp(msg_name , "INVITE")){
             TRACE_MSG("[TESTDEBUG] INVITE SEND SUCC.. mbcp_local_port=%d\n", this->mbcp_local_port);
             if(this->mbcp_socket != NULL) return dest;
@@ -1101,7 +1099,6 @@ char * call::send_scene(int index, int *send_status, int *len)
             }
         }
         else if(!strcmp(msg_name, "ACK")){
-            TRACE_MSG("[TESTDEBUG] ACK SEND SUCC\n");
         }
         else if(!strcmp(msg_name, "200")){
             TRACE_MSG("[TESTDEBUG] 200 SEND SUCC.. mbcp_local_port=%d\n", this->mbcp_local_port);
@@ -1352,11 +1349,13 @@ bool call::executeMessage(message *curmsg)
 
         do_bookkeeping(curmsg);
         executeAction(NULL, curmsg);
+        TRACE_MSG("next().. (%s %d)\n", __func__, __LINE__);
         return(next());
     } else if(curmsg -> M_type == MSG_TYPE_NOP) {
         callDebug("Executing NOP at index %d.\n", curmsg->index);
         do_bookkeeping(curmsg);
         executeAction(NULL, curmsg);
+        TRACE_MSG("next().. (%s %d)\n", __func__, __LINE__);
         return(next());
     }
 
@@ -1482,7 +1481,7 @@ bool call::executeMessage(message *curmsg)
 
         /* Update scenario statistics */
         curmsg -> nb_sent++;
-
+        TRACE_MSG("next().. (%s %d)\n", __func__, __LINE__);
         return next();
     } else if (curmsg->M_type == MSG_TYPE_RECV
                || curmsg->M_type == MSG_TYPE_RECVCMD
@@ -1548,23 +1547,23 @@ bool call::executeMessage(message *curmsg)
         }
     } else if(curmsg->M_type == MSG_TYPE_MBCP_SEND){
         //TESTDEBUG.. script 실행
-        
-
-
         curmsg->send_mbcp->Encode();
         char szLogBuf[8096] = "";
-        TRACE_MSG("[TESTDEBUG] MBCP SEND.. mbcp_local_port=%d, mbcp_remote_port=%d..\n%s\n%s\n", 
+        TRACE_MSG("[TESTDEBUG] script MBCP SEND.. mbcp_local_port=%d, mbcp_remote_port=%d..\n%s\n%s\n", 
             this->mbcp_local_port, 
             this->mbcp_remote_port, 
             curmsg->send_mbcp->GetDump().c_str(), 
             curmsg->send_mbcp->DumpMsgBicode(szLogBuf, curmsg->send_mbcp->pcBuf, curmsg->send_mbcp->nBufLen));
 
         this->mbcp_socket->Sendto(remote_host, this->mbcp_remote_port, curmsg->send_mbcp->pcBuf, curmsg->send_mbcp->nBufLen);
+        TRACE_MSG("next().. (%s %d)\n", __func__, __LINE__);
         return next();
     } else if(curmsg->M_type == MSG_TYPE_MBCP_RECV) {
         //TESTDEBUG.. script 실행
         TRACE_MSG("mbcp local port:%d.. remote port:%d\n", this->mbcp_local_port, this->mbcp_remote_port);
-        return next();
+        TRACE_MSG("setPaused().. (%s %d)\n", __func__, __LINE__);
+        setPaused();
+        //return next();
     } else {
         printf("Unknown message type at %s:%d: %d",  curmsg->desc, curmsg->index, curmsg->M_type);
         WARNING("Unknown message type at %s:%d: %d", curmsg->desc, curmsg->index, curmsg->M_type);
@@ -1607,6 +1606,7 @@ bool call::run()
         }
         if (!exec) {
             callDebug("Conditional variable %s %s set, so skipping message %d.\n", call_scenario->allocVars->getName(curmsg->condexec), curmsg->condexec_inverse ? "" : "not", msg_index);
+            TRACE_MSG("next().. (%s %d)\n", __func__, __LINE__);
             return next();
         }
     }
@@ -1685,6 +1685,7 @@ bool call::run()
         /* Our pause is over. */
         callDebug("Pause complete, waking up.\n");
         paused_until = 0;
+        TRACE_MSG("next().. (%s %d)\n", __func__, __LINE__);
         return next();
     }
     //TESTDEBUG scenario 실행
@@ -2562,6 +2563,7 @@ bool call::process_twinSippCom(char * msg)
             return rejectCall();
         }
         msg_index = search_index; //update the state machine
+        TRACE_MSG("next().. (%s %d)\n", __func__, __LINE__);
         return(next());
     } else {
         return (false);
@@ -2825,7 +2827,29 @@ void call::queue_up(const char* msg)
     free(queued_msg);
     queued_msg = strdup(msg);
 }
+bool call::mbcp_incoming(MBCP *mbcp, const struct sockaddr_storage* src){
+    TRACE_MSG("[TESTDEBUG]call::mbcp_incoming.. index:%d, messages size:%d\n", msg_index, call_scenario->messages.size());
+    TRACE_MSG("mbcp: nMsgName:%d.. this->MsgName:%d.. name:%s\n",
+        mbcp->pstMsg.nMsgName,
+        mbcp->nMsgName,
+        mbcp->StrMbcpSubType(mbcp->pstMsg.nMsgName));
 
+    for(int i = 0; i < call_scenario->messages.size() ; i++){
+        message *curmsg = call_scenario->messages[i];
+        if(curmsg != NULL){
+            TRACE_MSG("[TESTDEBUG] index:%d mbcp_incoming.. recvmsg:%s\n", i, curmsg->recv_mbcp_request);
+            TRACE_MSG("[TESTDEBUG] index:%d mbcp_incoming.. sendmsg?%p\n", i, curmsg->send_mbcp);
+        }
+    }
+    message *scen_msg = call_scenario->messages[msg_index];
+    if(scen_msg == NULL) return false;
+    if(!strcmp(scen_msg->recv_mbcp_request, mbcp->StrMbcpSubType2(mbcp->nMsgName))){
+        TRACE_MSG("mbcp scenario matching! success go next\n", scen_msg->recv_mbcp_request);
+        return next();
+    }
+    return false;
+    
+}
 bool call::process_incoming(const char* msg, const struct sockaddr_storage* src)
 {
     //TESTDEBUG sip를 수신하면 동작
@@ -2845,7 +2869,8 @@ bool call::process_incoming(const char* msg, const struct sockaddr_storage* src)
 
     setRunning();
     message *curmsg = call_scenario->messages[msg_index];
-
+    TRACE_MSG("call::process_incoming.. index:%d, messages size:%d\n", msg_index, call_scenario->messages.size());
+    
     //TESTDEBUG 중요한부분 
     // printf("[TESTDEBUG] process_incoming... curmsg->M_type=%d\n", curmsg->M_type);
     /* Ignore the messages received during a pause if -pause_msg_ign is set */
@@ -3322,7 +3347,7 @@ bool call::process_incoming(const char* msg, const struct sockaddr_storage* src)
             TRACE_MSG("[TESTDEBUG]port close needed.. this->mbcp_local_port=%d, this->mbcp_remote_port=%d", this->mbcp_local_port, this->mbcp_remote_port);
             
         }
-        TRACE_MSG("<recv> next().. \n");
+        TRACE_MSG("next().. (%s %d)\n", __func__, __LINE__);
         return next();
     } else {
         unsigned int timeout = wake();

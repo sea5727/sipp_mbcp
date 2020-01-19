@@ -630,7 +630,8 @@ void ScreenPrinter::draw_scenario_screen()
                      "");
         }
         else if ( curmsg->M_type == MSG_TYPE_MBCP_SEND){
-            buf_len += snprintf(buf + buf_len, bufsiz - buf_len, "  ----------> %-10s ", curmsg->recv_request);
+            printf("MSG_TYPE_MBCP_SEND screen.. creationMode=%d\n", creationMode);
+            //buf_len += snprintf(buf + buf_len, bufsiz - buf_len, "  ----------> %-10s ", curmsg->recv_request);
             if (creationMode == MODE_SERVER) {
                 buf_len +=
                     snprintf(buf + buf_len, bufsiz - buf_len,
@@ -644,6 +645,15 @@ void ScreenPrinter::draw_scenario_screen()
             printf("draw_scenario_screen??MSG_TYPE_MBCP_SEND  (%s %d)\n", __func__ , __LINE__);
         }
         else if ( curmsg->M_type == MSG_TYPE_MBCP_RECV){
+            if (creationMode == MODE_SERVER) {
+                buf_len +=
+                    snprintf(buf + buf_len, bufsiz - buf_len,
+                             "  ----------> %-10s ", curmsg->recv_mbcp_request);
+            } else {
+                buf_len +=
+                    snprintf(buf + buf_len, bufsiz - buf_len, "  %10s <---------- ",
+                             curmsg->recv_mbcp_request);
+            }
             printf("draw_scenario_screen??MSG_TYPE_MBCP_RECV (%s %d)\n", __func__ , __LINE__);
         }
         else {

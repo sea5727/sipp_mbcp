@@ -78,13 +78,10 @@ int MBCP::Decode(_MBCP_MSG *pstMsg, char *pcBuf, int nLen)
         pstMsg->nAckFlag = ON;
     }
 
-	TRACE_MSG("Decoder.. msgName=%d\n",pstMsg->nMsgName);
     switch(pstMsg->nMsgName){
 		case MBCP_FLOOR_IDLE:
 		{
-			TRACE_MSG("Decoder.. START IDLE\n");
 			nRet = __Floor_Idle_Decoder(pcBuf + nOffset, pstMsg, nLen);
-			TRACE_MSG("Decoder.. START IDLE ret=%d\n",nRet);
 			break;
 		}
 		case MBCP_FLOOR_TAKEN:
@@ -157,7 +154,6 @@ int MBCP::__Floor_Idle_Decoder(char *pcBuf, _MBCP_MSG *pstMsg, int nLen){
 	while(nDecoderLen < nLen){
 		unsigned char ucField = 0x00;
 		ucField = ptr[nOffset];
-		TRACE_MSG("ucField=%d\n", ucField);
 		switch(ucField){
 			case MBCP_Field_Message_Sequence_Number:
 			{
@@ -260,7 +256,6 @@ int MBCP::__Floor_Granted_Decoder(char *pcBuf, _MBCP_MSG *pstMsg, int nLen){
 	while(nDecoderLen < nLen){
 		unsigned char ucField = 0x00;
 		ucField = ptr[nOffset];
-		TRACE_MSG("Grandted Decoder .. ucField=%d\n", ucField);
 		switch(ucField){
 			case MBCP_Field_Duration:
 			{
@@ -282,7 +277,6 @@ int MBCP::__Floor_Granted_Decoder(char *pcBuf, _MBCP_MSG *pstMsg, int nLen){
 			}
 			case MBCP_Field_Queue_Size:
 			{
-				TRACE_MSG("Granted.. Decode..Queue Size\n");
 				_MBCP_QUEUE_SIZE *pstQueueSize = &pstGrantedMsg->QueueSize;
 				nOffset += __Decode_Queue_Size(ptr + nOffset, pstQueueSize);
 				break;
@@ -330,7 +324,6 @@ int MBCP::__Floor_Deny_Decoder(char *pcBuf, _MBCP_MSG *pstMsg, int nLen){
 	char *ptr = pcBuf;
 
 	int nDecoderLen = 0;
-	TRACE_MSG("[TESTDEBUG] START DENY... bbUserId=%d\n", pstDenyMsg->UserID.bUserID);
 	while(nDecoderLen < nLen){
 		unsigned char ucField = 0x00;
 		ucField = ptr[nOffset];
@@ -367,7 +360,6 @@ int MBCP::__Floor_Deny_Decoder(char *pcBuf, _MBCP_MSG *pstMsg, int nLen){
 		nDecoderLen = MBCP_MAX_HD_LEN + nOffset;
 	}
 
-	TRACE_MSG("[TESTDEBUG] DENY... bbUserId=%d\n", pstDenyMsg->UserID.bUserID);
 	nOffset += nDecoderLen;
 
 	return SUCC;
@@ -484,32 +476,27 @@ int MBCP::SIM_Floor_Request_Decoder(char *pcBuf, _MBCP_MSG *pstMBCPMsg, int nLen
 	while(nDecoderLen < nLen){
 		unsigned char ucField = 0x00;
 		ucField = ptr[nOffset];
-		TRACE_MSG("REQUEST while start.. ucField:%d..nOffset:%d ..nDecoderLen:%d <?  nLen:%d\n", ucField, nOffset, nDecoderLen, nLen);
 		switch(ucField){
 			case MBCP_Field_Floor_Priority:
 				{
-					TRACE_MSG("REQUEST.. Priority..\n");
 					_MBCP_FLOOR_PRIORITY *pstPriority = &pstMsg->priority;
 					nOffset += __Decode_Priority(ptr + nOffset, pstPriority);
 					break;
 				}
 			case MBCP_Field_User_ID:
 				{
-					TRACE_MSG("REQUEST.. UserId..\n");
 					_MBCP_USER_ID *pstUserId = &pstMsg->UserID;
 					nOffset += __Decode_UserID(ptr + nOffset, pstUserId);
 					break;
 				}
 			case MBCP_Field_Track_Info:
 				{
-					TRACE_MSG("REQUEST.. TrackInfo..\n");
 					_MBCP_TRACK_INFO *pstTrackInfo = &pstMsg->Track_Info;
 					nOffset += __Decode_TrackInfo(ptr + nOffset, pstTrackInfo);
 					break;
 				}
 			case MBCP_Field_Floor_Indicator:
 				{
-					TRACE_MSG("REQUEST.. Indicator..\n");
 					_MBCP_FLOOR_INDICATOR *pstIndicator = &pstMsg->Indicator;
 					nOffset += __Decode_Indicator(ptr + nOffset, pstIndicator);
 					break;
@@ -520,7 +507,6 @@ int MBCP::SIM_Floor_Request_Decoder(char *pcBuf, _MBCP_MSG *pstMBCPMsg, int nLen
 					}
 		}
 		nDecoderLen = MBCP_MAX_HD_LEN + nOffset;
-		TRACE_MSG("REQUEST..WHILE END ucField:%d..nOffset:%d ..nDecoderLen:%d <?  nLen:%d\n", ucField, nOffset, nDecoderLen, nLen);
 	}
 
 	nOffset += nDecoderLen;
@@ -666,7 +652,6 @@ int MBCP::__Decode_Priority(char* pBuf, _MBCP_FLOOR_PRIORITY *pstPriority){
 	pstPriority->nPriority = pBuf[nIdx]; nIdx += 1;
 	pstPriority->bPriority = TRUE;
 	nIdx += 1; //Spare
-	TRACE_MSG("Decode Priority return value=%d\n", nIdx);
 	return nIdx;
 }
 //-------------------------------------------------------------------------------------------------------------- Priority Field End.//
@@ -739,41 +724,22 @@ int MBCP::__Decode_UserID(char* pBuf, _MBCP_USER_ID *pstUserID){
 	int nIdx = 0;
 	nIdx += 1; //Field ID
 	int nUserIDLen = pBuf[1]; nIdx += 1;
-	TRACE_MSG("nUserIDLen:%d, nIdx:%d\n", nUserIDLen, nIdx);
 
 	strncpy(pstUserID->cUserID, pBuf + nIdx, nUserIDLen); 
 	pstUserID->cUserID[nUserIDLen] = '\0';
 
-	TRACE_MSG("strlen(userId)=%d, nIdx=%d\n", strlen(pstUserID->cUserID), nIdx);
-	for(int i = 0 ; i < 4 ; i++){
-		int offset = i * 10;
-		TRACE_MSG("%c(%d), %c(%d), %c(%d), %c(%d), %c(%d), %c(%d), %c(%d), %c(%d), %c(%d), %c(%d)\n", 
-			pstUserID->cUserID[0 + offset], pstUserID->cUserID[0 + offset], 
-			pstUserID->cUserID[1 + offset], pstUserID->cUserID[1 + offset], 
-			pstUserID->cUserID[2 + offset], pstUserID->cUserID[2 + offset], 
-			pstUserID->cUserID[3 + offset], pstUserID->cUserID[3 + offset], 
-			pstUserID->cUserID[4 + offset], pstUserID->cUserID[4 + offset], 
-			pstUserID->cUserID[5 + offset], pstUserID->cUserID[5 + offset], 
-			pstUserID->cUserID[6 + offset], pstUserID->cUserID[6 + offset], 
-			pstUserID->cUserID[7 + offset], pstUserID->cUserID[7 + offset], 
-			pstUserID->cUserID[8 + offset], pstUserID->cUserID[8 + offset], 
-			pstUserID->cUserID[9 + offset], pstUserID->cUserID[9 + offset]);
-	}
 	nIdx = ALIGN_LEN4(strlen(pstUserID->cUserID) + nIdx);
 	pstUserID->bUserID = TRUE;
-	TRACE_MSG("return nIdx:%d\n", nIdx);
 	return nIdx;
 }
 //-------------------------------------------------------------------------------------------------------------- User ID Field End.//
 
 // Queue Size Field ---------------------------------------------------------------------------------------------------------------//
 int MBCP::__Decode_Queue_Size(char* pBuf, _MBCP_QUEUE_SIZE *pstQueueSize){
-	TRACE_MSG("GRANTED DECode Queue Size.. QueueSize=%d\n");
 	int nIdx = 0;
 	nIdx += 2; //Field ID + LenValue
 	pstQueueSize->nQueueSize = GET_16(pBuf + nIdx); nIdx += 2;
 	pstQueueSize->bQueueSize = TRUE;
-	TRACE_MSG("GRANTED DECode Queue Size.. QueueSize=%d\n", pstQueueSize->nQueueSize);
     return nIdx;
 }
 //---------------------------------------------------------------------------------------------------------- Queue Size Field End.//
@@ -784,7 +750,6 @@ int MBCP::__Decode_Message_Sequence_Number(char *pBuf, _MBCP_MSG_SEQ_NUMBER *pst
 	nIdx += 2; //Field ID + LenValue
 	pstSeqNum->nSeqNum = GET_16(pBuf + nIdx); nIdx += 2;
 	pstSeqNum->bSeqNum = TRUE;
-	TRACE_MSG("pstSeqNum=%d , bSeqNum=%d\n", pstSeqNum->nSeqNum, pstSeqNum->bSeqNum);
 	return nIdx;
 }
 //-------------------------------------------------------------------------------------------------- Sequence Number Field End.//
@@ -992,7 +957,6 @@ char* MBCP::DumpMsgBicode(char *szDestBuf, char *szSourceBuf, int nSourceLen)
 
 
 std::string MBCP::GetDump(){
-	TRACE_MSG("GetDump..\n");
 	char buf[8096] = "";
 	snprintf(buf, sizeof(buf), "%s\tversion: %d, subtype: %#x(%s), pt: %d, length: %d, ssrc: %u\n%s", 
 		"-----------------------------------------------------------------------------------------------\n",
@@ -1003,7 +967,6 @@ std::string MBCP::GetDump(){
 		this->pstMsg.stHeader.ssrc, 
 		"-----------------------------------------------------------------------------------------------\n");
 	std::string dump(buf);
-	TRACE_MSG("return\n");
 	return dump;
 }
 int MBCP::__Get_SubType(int nMsgName, int nAckFlag){
@@ -1479,6 +1442,28 @@ int __Decode_Indicator(char *pBuf, _MBCP_FLOOR_INDICATOR *pstIndicator){
 //------------------------------------------------------------------------------------------------------------- Indicator Field End.//
 ///======================================================================================== Field Decoder End.///
 
+const char *MBCP::StrMbcpSubType2(int nSubType){
+    switch(nSubType)
+    {
+        case 0:     return "REQUEST";
+        case 1:     return "GRANTED";
+        case 17:    return "GRANTED(ACK REQUIRED)";
+        case 2:     return "TAKEN";
+        case 18:    return "TAKEN(ACK REQUIRED)";
+        case 3:     return "DENY";
+        case 19:    return "DENY(ACK REQUIRED)";
+        case 4:     return "RELEASE";
+        case 20:    return "RELEASE(ACK REQUIRED)";
+        case 5:     return "IDLE";
+        case 21:    return "IDLE(ACK REQUIRED)";
+        case 6:     return "REVOKE";
+        case 8:     return "QUEUE_POSITION_REQUEST";
+        case 9:     return "QUEUE_INFO";
+        case 25:    return "QUEUE_INFO(ACK REQUIRED)";
+        case 10:    return "ACK";
+        default:    return "UNKOWN";
+    }
+}
 const char *MBCP::StrMbcpSubType(int nSubType)
 {
     switch(nSubType)
@@ -1913,11 +1898,9 @@ int MBCP_RELEASE::__Encode(_MBCP_MSG *pstMsg, char *pcBuf){
 
 
 MBCP_IDLE::MBCP_IDLE() : MBCP(){
-	TRACE_MSG("MBCP MBCP_IDLE() Constructor\n");
     this->nMsgName = MBCP_FLOOR_IDLE; 
 }
 MBCP_IDLE::MBCP_IDLE(char *szBuf, int nBufLen) : MBCP(szBuf, nBufLen) {
-	TRACE_MSG("MBCP MBCP_IDLE(char*, int) Constructor\n");
     this->nMsgName = MBCP_FLOOR_IDLE; 
 }
 MBCP_IDLE::~MBCP_IDLE(){

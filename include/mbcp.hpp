@@ -119,6 +119,7 @@ public:
     char* DumpMsgBicode(char *szDestBuf, char *szSourceBuf, int nSourceLen);
     char* printBIN(char *szDestBuf, int x);
     const char *StrMbcpSubType(int nSubType);
+    const char *StrMbcpSubType2(int nSubType);
     const char *GetName() { return StrMbcpSubType(this->nMsgName);}
     std::string Str_MBCP_MsgType(_MBCP_MSG_TYPE *pstMsgType);
     std::string Str_MBCP_Priority(_MBCP_FLOOR_PRIORITY *pstPriority);

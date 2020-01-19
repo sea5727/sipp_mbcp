@@ -31,6 +31,7 @@
 #include "config.h"
 #include "sipp.hpp"
 #include "mbcp.hpp"
+#include "mbcp_factory.hpp"
 #ifdef HAVE_GSL
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
@@ -42,6 +43,8 @@
 
 message::message(int index, const char *desc)
 {
+    send_mbcp = NULL;
+    recv_mbcp_request = NULL;
     this->index = index;
     this->desc = desc;
     pause_distribution = NULL; // delete on exit
@@ -713,94 +716,34 @@ scenario::scenario(char * filename, int deflt)
 
             ptr = xp_get_string("Message", "mbcp message name");
             curmsg->recv_request = strdup(ptr);
-            MBCP *mbcp;
-            printf("mbcp Message=%s\n", ptr);
-            if(!strcmp(ptr, "REQUEST")){
-                curmsg->send_mbcp =  new MBCP_REQUEST();
-                mbcp = curmsg->send_mbcp;
-            }
-            else if(!strcmp(ptr, "RELEASE")){
-                curmsg->send_mbcp =  new MBCP_RELEASE();
-                mbcp = curmsg->send_mbcp;
-            }
-            else if(!strcmp(ptr, "IDLE")){
-                curmsg->send_mbcp =  new MBCP_IDLE();
-                mbcp = curmsg->send_mbcp;
-            }
-            else if(!strcmp(ptr, "GRANTED")){
-                curmsg->send_mbcp =  new MBCP_GRANTED();
-                mbcp = curmsg->send_mbcp;
-            }
-            else if(!strcmp(ptr, "DENY")){
-                curmsg->send_mbcp =  new MBCP_DENY();
-                mbcp = curmsg->send_mbcp;
-            }
-            else if(!strcmp(ptr, "REVOKE")){
-                curmsg->send_mbcp =  new MBCP_REVOKE();
-                mbcp = curmsg->send_mbcp;
-            }
-            else if(!strcmp(ptr, "TAKEN")){
-                curmsg->send_mbcp =  new MBCP_TAKEN();
-                mbcp = curmsg->send_mbcp;
-            }
-            else if(!strcmp(ptr, "ACK")){
-                curmsg->send_mbcp =  new MBCP_ACK();
-                mbcp = curmsg->send_mbcp;
-            }
-            else if(!strcmp(ptr, "QUEUE_INFO")){
-                curmsg->send_mbcp =  new MBCP_QUEUE_INFO();
-                mbcp = curmsg->send_mbcp;
-            }else {
+            
+            MBCP *mbcp = FactoryMbcp::Instance()->Execute(ptr);
+            if(mbcp == NULL) {
                 ERROR("%s is missing the required '%s' parameter.", "mbcp", "correct mbcp message name");
             }
-            printf("mbcp message : %s\n", ptr);
+            curmsg->send_mbcp = mbcp;
             free(ptr);
-            if((cptr = xp_get_value("Sequence"))) {
-                printf("Sequence %s\n", cptr);
-                mbcp->SetSequenceNumber(atoi(cptr));
-            }
-            if((cptr = xp_get_value("Indicator"))) {
-                mbcp->SetIndicator(cptr);
-            }
-            if((cptr = xp_get_value("Duration"))) {
-                mbcp->SetDuration(atoi(cptr));
-            }
-            if((cptr = xp_get_value("Priority"))) {
-                mbcp->SetPriority(atoi(cptr));
-            }
-            if((cptr = xp_get_value("UserId"))) {
-                printf("Set User Id %s\n", cptr);
-                mbcp->SetUserId(cptr);
-            }
-            if((cptr = xp_get_value("QueueSize"))) {
-                mbcp->SetQueueSize(atoi(cptr));
-            }
-            if((cptr = xp_get_value("nRejectCause"))) {
-                mbcp->SetnRejectCause(atoi(cptr));
-            }
-            if((cptr = xp_get_value("strRejectCause"))) {
-                mbcp->SetstrRejectCause(cptr);
-            }
-            if((cptr = xp_get_value("GrantPartyId"))) {
-                mbcp->SetGrantPartyId(cptr);
-            }
-            if((cptr = xp_get_value("PermissionToReq"))) {
-                mbcp->SetGrantPermissionRequest(atoi(cptr));
-            }
-            if((cptr = xp_get_value("Source"))) {
-                mbcp->SetSource(atoi(cptr));
-            }
-            if((cptr = xp_get_value("MessageType"))) {
-                mbcp->SetMessageType(atoi(cptr));
-            }
+            if((cptr = xp_get_value("Sequence"))) mbcp->SetSequenceNumber(atoi(cptr));
+            if((cptr = xp_get_value("Indicator"))) mbcp->SetIndicator(cptr);
+            if((cptr = xp_get_value("Duration"))) mbcp->SetDuration(atoi(cptr));
+            if((cptr = xp_get_value("Priority"))) mbcp->SetPriority(atoi(cptr));
+            if((cptr = xp_get_value("UserId"))) mbcp->SetUserId(cptr);
+            if((cptr = xp_get_value("QueueSize"))) mbcp->SetQueueSize(atoi(cptr));
+            if((cptr = xp_get_value("nRejectCause"))) mbcp->SetnRejectCause(atoi(cptr));
+            if((cptr = xp_get_value("strRejectCause"))) mbcp->SetstrRejectCause(cptr);
+            if((cptr = xp_get_value("GrantPartyId"))) mbcp->SetGrantPartyId(cptr);
+            if((cptr = xp_get_value("PermissionToReq"))) mbcp->SetGrantPermissionRequest(atoi(cptr));
+            if((cptr = xp_get_value("Source"))) mbcp->SetSource(atoi(cptr));
+            if((cptr = xp_get_value("MessageType"))) mbcp->SetMessageType(atoi(cptr));
         }
         else if(!strcmp(elem, "mbcp_recv")){
-
+            printf("mbcp_recv name?%s\n", name);
             message *curmsg = new message(messages.size(), name ? name : "unknown scenario");
             messages.push_back(curmsg);
 
             ptr = xp_get_string("Message", "mbcp message name");
-            curmsg->recv_request = strdup(ptr);
+            printf("Message:%s\n", ptr);
+            curmsg->recv_mbcp_request = strdup(ptr);
             curmsg->M_type = MSG_TYPE_MBCP_RECV;
             free(ptr);
         }
@@ -873,6 +816,7 @@ scenario::scenario(char * filename, int deflt)
             char *initelem;
             while ((initelem = xp_open_element(nop_cursor++))) {
                 if (!strcmp(initelem, "nop")) {
+                    printf("this is nop\n");
                     /* We should parse this. */
                     message *nopmsg = new message(initmessages.size(), "scenario initialization");
                     initmessages.push_back(nopmsg);
@@ -1051,7 +995,7 @@ scenario::scenario(char * filename, int deflt)
                     /* Update scenario duration with max duration */
                     duration += (int)pause_duration;
                 }
-            } else if(!strcmp(elem, "nop")) {
+            }else if(!strcmp(elem, "nop")) {    
                 checkOptionalRecv(elem, scenario_file_cursor);
                 /* Does nothing at SIP level.  This message type can be used to handle
                  * actions, increment counters, or for RTDs. */
