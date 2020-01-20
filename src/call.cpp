@@ -2843,9 +2843,18 @@ bool call::mbcp_incoming(MBCP *mbcp, const struct sockaddr_storage* src){
     }
     message *scen_msg = call_scenario->messages[msg_index];
     if(scen_msg == NULL) return false;
+    if(scen_msg->recv_mbcp_request == NULL) return false;
+    TRACE_MSG("scen_msg : %p\n", scen_msg);
+    TRACE_MSG("scen_msg2 : %s\n", scen_msg->recv_mbcp_request);
+    TRACE_MSG("scen_msg3 : %d\n", mbcp->nMsgName);
+    TRACE_MSG("scen_msg4 : %s\n", mbcp->StrMbcpSubType2(mbcp->nMsgName));
     if(!strcmp(scen_msg->recv_mbcp_request, mbcp->StrMbcpSubType2(mbcp->nMsgName))){
-        TRACE_MSG("mbcp scenario matching! success go next\n", scen_msg->recv_mbcp_request);
+        TRACE_MSG("scen_msg?? : %p\n", scen_msg);
+        TRACE_MSG("mbcp scenario matching! success go next %s\n", scen_msg->recv_mbcp_request);
         return next();
+    }
+    else {
+        TRACE_MSG("scen_msg?? else : %p\n", scen_msg);
     }
     return false;
     
@@ -3044,6 +3053,7 @@ bool call::process_incoming(const char* msg, const struct sockaddr_storage* src)
 
     /* Try to find it in the expected non mandatory responses
      * until the first mandatory response in the scenario */
+    TRACE_MSG("BYE CHECK ..msg_indx:%d (%s %d)\n", msg_index, __func__, __LINE__);
     for (search_index = msg_index;
             search_index < (int)call_scenario->messages.size();
             search_index++) {
@@ -3062,7 +3072,7 @@ bool call::process_incoming(const char* msg, const struct sockaddr_storage* src)
          * a 100 trying. */
         break;
     }
-
+    TRACE_MSG("BYE CHECK ..found=%d (%s %d)\n", found, __func__, __LINE__);
     /* Try to find it in the old non-mandatory receptions */
     if (!found) {
         bool contig = true;
@@ -3128,7 +3138,7 @@ bool call::process_incoming(const char* msg, const struct sockaddr_storage* src)
             }
         }
     }
-
+    TRACE_MSG("BYE CHECK ..found=%d (%s %d)\n", found, __func__, __LINE__);
     /* If it is still not found, process an unexpected message */
     if(!found) {
         if (call_scenario->unexpected_jump >= 0) {
@@ -3174,6 +3184,7 @@ bool call::process_incoming(const char* msg, const struct sockaddr_storage* src)
      */
 
     /* Simulate loss of messages */
+    TRACE_MSG("BYE CHECK .. (%s %d)\n", __func__, __LINE__);
     if(lost(search_index)) {
         TRACE_MSG("%s message lost (recv).",
                   TRANSPORT_TO_STRING(transport));
@@ -3185,7 +3196,7 @@ bool call::process_incoming(const char* msg, const struct sockaddr_storage* src)
         call_scenario->messages[search_index] -> nb_lost++;
         return true;
     }
-
+    TRACE_MSG("BYE CHECK .. (%s %d)\n", __func__, __LINE__);
     /* If we are part of a transaction, mark this as the final response. */
     if (int checkTxn = call_scenario->messages[search_index]->response_txn) {
         transactions[checkTxn - 1].txnResp = hash(msg);
@@ -3316,7 +3327,7 @@ bool call::process_incoming(const char* msg, const struct sockaddr_storage* src)
     if (!call_scenario->messages[search_index]->advance_state) {
         return true;
     }
-
+    TRACE_MSG("BYE CHECK .. (%s %d)\n", __func__, __LINE__);
     /* Store last received message information for all messages so that we can
      * correctly identify retransmissions, and use its body for inclusion
      * in our messages. */
@@ -3335,6 +3346,7 @@ bool call::process_incoming(const char* msg, const struct sockaddr_storage* src)
 
     strcpy(last_recv_msg, msg);
 
+    TRACE_MSG("BYE CHECK .. (%s %d)\n", __func__, __LINE__);
     /* If this was a mandatory message, or if there is an explicit next label set
      * we must update our state machine.  */
     if (!call_scenario->messages[search_index]->optional ||
