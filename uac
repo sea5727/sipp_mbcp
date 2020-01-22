@@ -136,6 +136,7 @@ Content-Type: application/resource-lists+xml
   <!-- or by adding a 'milliseconds = "value"' option here.             -->
 
   <!-- can't TrackInfo, QueueUserId QueueInfo -->
+  <pause milliseconds="5000" crlf="true"/>
   <mbcp_send
 	Message="IDLE"
 	Sequence="12345"
@@ -189,7 +190,6 @@ Content-Type: application/resource-lists+xml
 	UserId="QueueInfo@j-din.com"
 	Indicator="C">
   </mbcp_send>
-  
 
   <mbcp_send
 	Message="ACK"
@@ -198,7 +198,7 @@ Content-Type: application/resource-lists+xml
 
   </mbcp_send>
   <pause/>
-
+  <pause milliseconds="5000" crlf="true"/>
   <!-- The 'crlf' option inserts a blank line in the statistics report. -->
   <send retrans="500">
     <![CDATA[

@@ -26,8 +26,10 @@ MBCP::MBCP(char* szBuf, int nBufLen){
 	memcpy(this->pcBuf, (void*)szBuf, nBufLen);
 	this->nBufLen = nBufLen;
 	int ret = Decode();
-	if(ret < 0)
-		printf("MBCP unkowns message\n");
+	if(ret < 0){
+		printf("MBCP unkowns message.. msgName=%d\n", this->nMsgName);
+	}
+		
 }
 MBCP::~MBCP()
 {
@@ -72,13 +74,13 @@ int MBCP::Decode(_MBCP_MSG *pstMsg, char *pcBuf, int nLen)
     //FIXME Offset 체크한번 하면 좋을듯
 
     pstMsg->nMsgName = pstMsg->stHeader.subtype;
-	this->nMsgName = pstMsg->nMsgName;
+	this->nMsgName = pstMsg->nMsgName & 0xf;
 
     if(pstMsg->stHeader.subtype & 0x10){
         pstMsg->nAckFlag = ON;
     }
 
-    switch(pstMsg->nMsgName){
+    switch(this->nMsgName){
 		case MBCP_FLOOR_IDLE:
 		{
 			nRet = __Floor_Idle_Decoder(pcBuf + nOffset, pstMsg, nLen);
@@ -451,6 +453,7 @@ int MBCP::__Floor_Revoke_Decoder(char *pcBuf, _MBCP_MSG *pstMsg, int nLen){
 				break;
 			}
 			default:{
+				printf("REVOKE.. default\n");
 				return FAIL;
 			}
 		}
@@ -923,7 +926,6 @@ int MBCP::Encode()
 	__Encode_Header(pstMsg, pcBuf, nOffset);
 	this->nBufLen = nOffset;
 	this->pstMsg.stHeader.length = this->nBufLen;
-	printf("Encode len=%d\n", this->nBufLen);
 	return SUCC;
 }
 char* MBCP::printBIN(char *szDestBuf, int x)

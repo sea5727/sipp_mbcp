@@ -61,7 +61,7 @@
 #include "config.h"
 #include "version.h"
 #include "mbcp.hpp"
-
+#include "SimpleUdpSocket.hpp"
 template<typename Out>
 void split(const std::string &s, char delim, Out result) {
     std::stringstream ss;
@@ -1352,6 +1352,7 @@ bool call::executeMessage(message *curmsg)
         TRACE_MSG("next().. (%s %d)\n", __func__, __LINE__);
         return(next());
     } else if(curmsg -> M_type == MSG_TYPE_NOP) {
+        printf("MSG_TYPE_NOP\n");
         callDebug("Executing NOP at index %d.\n", curmsg->index);
         do_bookkeeping(curmsg);
         executeAction(NULL, curmsg);
@@ -1486,6 +1487,7 @@ bool call::executeMessage(message *curmsg)
     } else if (curmsg->M_type == MSG_TYPE_RECV
                || curmsg->M_type == MSG_TYPE_RECVCMD
               ) {
+        printf("MSG_TYPE_RECV\n");
         //TESTDEBUG scenario recv
         if (queued_msg) {
             printf("<recv> .. queued msg?\n");
@@ -1541,8 +1543,9 @@ bool call::executeMessage(message *curmsg)
                 recv_timeout = getmilliseconds() + defl_recv_timeout;
             return true;
         } else {
-            TRACE_MSG("<recv> else?\n");
+            TRACE_MSG("[TESTDEBUG]<recv> else?\n");
             /* We are going to wait forever. */
+            printf("setPaused??\n");
             setPaused();
         }
     } else if(curmsg->M_type == MSG_TYPE_MBCP_SEND){
@@ -1564,7 +1567,48 @@ bool call::executeMessage(message *curmsg)
         TRACE_MSG("setPaused().. (%s %d)\n", __func__, __LINE__);
         setPaused();
         //return next();
-    } else {
+    } else if(curmsg->M_type == MSG_TYPE_TCP_CONNECT) {
+        printf("curmsg->M_type == MSG_TYPE_TCP_CONNECT..\n");
+        int ret = curmsg->tcp_sock->Connect();
+        printf("connect ret = %d\n", ret);
+        if(ret < 0){
+            ERROR("TCP CONNECT FAIL socket:%s ip:%s, port:%s name:%s\n", 
+                curmsg->tcp_sock->nSocket, 
+                curmsg->tcp_sock->getIp(),
+                curmsg->tcp_sock->getPort(),
+                curmsg->tcp_sock->strName.c_str());
+        }
+
+        return next();
+    } else if(curmsg->M_type == MSG_TYPE_TCP_SEND) {
+        vector<SimpleSocketScenario *>::iterator i;
+        char szBuf[8096] = "";
+        int pLen = 0;
+        for(i = curmsg->tcp_sock_scenario.begin() ; i != curmsg->tcp_sock_scenario.end(); i++){
+            TRACE_MSG("[TESTDEBUG]tcp_sock_scenario index:%d.. adding len=%d\n",i, (*i)->nBufLen);
+            memcpy(szBuf + pLen, (*i)->szBuf, (*i)->nBufLen);
+            pLen += (*i)->nBufLen;
+        }
+        TRACE_MSG("[TESTDEBUG]try tcp Write..Buf[%s] len=%d\n", szBuf, pLen);
+        int ret = curmsg->tcp_sock->Write(szBuf, pLen);
+        if(ret <= 0){
+            ERROR("TCP SEND FAIL socket:%d ip:%s, port:%d name:%s, szBuf=%s, pLen=%d\n", 
+                curmsg->tcp_sock->nSocket, 
+                curmsg->tcp_sock->getIp(),
+                curmsg->tcp_sock->getPort(),
+                curmsg->tcp_sock->strName.c_str(),
+                szBuf, pLen);
+        }
+        printf("TCP SEND FAIL ret=%d, socket:%d ip:%s, port:%d name:%s, szBuf=%s, pLen=%d\n", 
+                ret,
+                curmsg->tcp_sock->nSocket, 
+                curmsg->tcp_sock->getIp(),
+                curmsg->tcp_sock->getPort(),
+                curmsg->tcp_sock->strName.c_str(),
+                szBuf, pLen);
+        return next();
+    }
+    else {
         printf("Unknown message type at %s:%d: %d",  curmsg->desc, curmsg->index, curmsg->M_type);
         WARNING("Unknown message type at %s:%d: %d", curmsg->desc, curmsg->index, curmsg->M_type);
     }
@@ -1573,6 +1617,7 @@ bool call::executeMessage(message *curmsg)
 
 bool call::run()
 {
+    printf("call::run\n");
     bool            bInviteTransaction = false;
 
     assert(running);

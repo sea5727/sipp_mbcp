@@ -45,6 +45,7 @@ message::message(int index, const char *desc)
 {
     send_mbcp = NULL;
     recv_mbcp_request = NULL;
+    send_mbcp_request = NULL;
     this->index = index;
     this->desc = desc;
     pause_distribution = NULL; // delete on exit
@@ -119,6 +120,7 @@ message::message(int index, const char *desc)
 
 message::~message()
 {
+    free(send_mbcp_request);
     delete(pause_distribution);
     free(pause_desc);
     delete(send_scheme);
@@ -715,7 +717,7 @@ scenario::scenario(char * filename, int deflt)
             curmsg->M_type = MSG_TYPE_MBCP_SEND;
 
             ptr = xp_get_string("Message", "mbcp message name");
-            curmsg->recv_request = strdup(ptr);
+            curmsg->send_mbcp_request = strdup(ptr);
             
             MBCP *mbcp = FactoryMbcp::Instance()->Execute(ptr);
             if(mbcp == NULL) {

@@ -83,6 +83,7 @@ public:
 
     /* If this is mbcp send*/
     MBCP           *send_mbcp;
+    char           *send_mbcp_request;
     char           *recv_mbcp_request;
     /* If this is a send */
     SendingMessage *send_scheme;

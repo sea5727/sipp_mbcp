@@ -40,6 +40,7 @@
         "type_traits": "cpp",
         "utility": "cpp",
         "algorithm": "cpp",
-        "memory": "cpp"
+        "memory": "cpp",
+        "random": "cpp"
     }
 }

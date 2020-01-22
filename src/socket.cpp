@@ -1241,7 +1241,7 @@ void process_message(SIPpSocket *socket, char *msg, ssize_t msg_size, struct soc
         }
     }
     
-    /* If the call was not created above, we just drop this message. */
+    /* If the call was not created above, we just drop this messageEncode len. */
     if (!listener_ptr) {
         return;
     }
@@ -1249,7 +1249,7 @@ void process_message(SIPpSocket *socket, char *msg, ssize_t msg_size, struct soc
         listener_ptr -> process_twinSippCom(msg);
     } else {
         //TESTDEBUG sipp recv부분
-        printf("<recv> process_message...\n");
+        TRACE_MSG("[TESTDEBUG] listener_ptr -> process_incoming SIP Recv!!! (%s %d)\n", __func__, __LINE__);
         listener_ptr -> process_incoming(msg, src);
     }
 }

@@ -38,6 +38,7 @@ void* mbcp_thread(void* param){
     char recvBuffer[MBCP_BUFFER_SIZE] = "";
 
     while(1){
+        
         struct epoll_event stEvents[EPOLL_SIZE];
         int count = epoll_wait(mbcp_epoll, stEvents, EPOLL_SIZE, 30); // 0 ~ 30 
         if(count <= 0){
@@ -45,6 +46,7 @@ void* mbcp_thread(void* param){
         }
 
         for(int i = 0 ; i < count ; i++){
+            printf("epoll!!\n");
             int sock = stEvents[i].data.fd;
             if(sock < 0){
                 continue;

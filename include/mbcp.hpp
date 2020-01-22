@@ -3,13 +3,13 @@
 #define __MBCP__
 
 #include <stdio.h>
-#include "mbcp.h"
 #include <sys/types.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include "mbcp.h"
 
 #define MBCP_BUFFER_SIZE 8096
 
@@ -38,7 +38,7 @@ public:
         int result = bind(this->nSocket, (sockaddr*)&addrListen, sizeof(addrListen));
         return result;
     }
-    int Sendto(const char *szRemoteIp, int nRemotePort, char szBuf[MBCP_BUFFER_SIZE], int nDataLen){
+    int Sendto(const char *szRemoteIp, int nRemotePort, char* szBuf, int nDataLen){
         struct sockaddr_in servAddr;
         memset(&servAddr, 0, sizeof(servAddr));
     
@@ -47,7 +47,7 @@ public:
         servAddr.sin_port = htons(nRemotePort);
 
         int result = sendto(this->nSocket, szBuf, nDataLen, 0, (struct sockaddr*)&servAddr, sizeof(servAddr));
-        printf("sendto result=%d, socket=%d, datalen=%d remoteIp=%s, port=%d\n", result, this->nSocket, nDataLen, szRemoteIp, nRemotePort);
+        // TRACE_MSG("[TESTDEBUG]sendto result=%d, socket=%d, datalen=%d remoteIp=%s, port=%d\n", result, this->nSocket, nDataLen, szRemoteIp, nRemotePort);
         return result;
        
     }
@@ -56,10 +56,8 @@ public:
         int clntLen = sizeof(clntAddr);
         int recvLen = -1;
         char recvBuffer[8096] = "";
-        if((recvLen=recvfrom(this->nSocket, recvBuffer, sizeof(recvBuffer), 0, (struct sockaddr*)&clntAddr, (socklen_t*)&clntLen)) == -1) {
-            printf("recvfrom fail %d\n", recvLen);
-            return recvLen;
-        }
+        recvLen = recvfrom(this->nSocket, recvBuffer, sizeof(recvBuffer), 0, (struct sockaddr*)&clntAddr, (socklen_t*)&clntLen);
+        // TRACE_MSG("[TESTDEBUG]recvfrom result=%d, socket=%d\n", recvLen, this->nSocket);
         return recvLen;
     }
 };

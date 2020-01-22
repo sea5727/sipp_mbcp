@@ -466,7 +466,7 @@ void ScreenPrinter::draw_scenario_screen()
          index++) {
         buf[0] = 0;
         message* curmsg = display_scenario->messages[index];
-
+        
         if (do_hide && curmsg->hide) {
             continue;
         }
@@ -630,19 +630,33 @@ void ScreenPrinter::draw_scenario_screen()
                      "");
         }
         else if ( curmsg->M_type == MSG_TYPE_MBCP_SEND){
-            printf("MSG_TYPE_MBCP_SEND screen.. creationMode=%d\n", creationMode);
-            //buf_len += snprintf(buf + buf_len, bufsiz - buf_len, "  ----------> %-10s ", curmsg->recv_request);
             if (creationMode == MODE_SERVER) {
                 buf_len +=
                     snprintf(buf + buf_len, bufsiz - buf_len,
-                             "  ----------> %-10s ", curmsg->recv_request);
+                             "  <--------- %-10s ", curmsg->send_mbcp_request);
             } else {
                 buf_len +=
-                    snprintf(buf + buf_len, bufsiz - buf_len, "  %10s <---------- ",
-                             curmsg->recv_request);
+                    snprintf(buf + buf_len, bufsiz - buf_len, "  %10s ----------> ",
+                             curmsg->send_mbcp_request);
             }
-
-            printf("draw_scenario_screen??MSG_TYPE_MBCP_SEND  (%s %d)\n", __func__ , __LINE__);
+            buf_len += snprintf(buf + buf_len, bufsiz - buf_len, "        ");
+            if (curmsg->retrans_delay) {
+                buf_len += snprintf(
+                    buf + buf_len, bufsiz - buf_len, "%-9lu %-9lu %-9lu %-9s %-9s",
+                    curmsg->nb_sent, curmsg->nb_sent_retrans,
+                    curmsg->nb_timeout, "" /* Unexpected */,
+                    (lose_packets && curmsg->nb_lost)
+                        ? std::to_string(curmsg->nb_lost).c_str()
+                        : "");
+            } else {
+                buf_len += snprintf(
+                    buf + buf_len, bufsiz - buf_len, "%-9lu %-9lu %-9s %-9s %-9s",
+                    curmsg->nb_sent, curmsg->nb_sent_retrans, "", /* Timeout. */
+                    "" /* Unexpected. */,
+                    (lose_packets && curmsg->nb_lost)
+                        ? std::to_string(curmsg->nb_lost).c_str()
+                        : "");
+            }
         }
         else if ( curmsg->M_type == MSG_TYPE_MBCP_RECV){
             if (creationMode == MODE_SERVER) {
@@ -654,7 +668,15 @@ void ScreenPrinter::draw_scenario_screen()
                     snprintf(buf + buf_len, bufsiz - buf_len, "  %10s <---------- ",
                              curmsg->recv_mbcp_request);
             }
-            printf("draw_scenario_screen??MSG_TYPE_MBCP_RECV (%s %d)\n", __func__ , __LINE__);
+            buf_len += snprintf(buf + buf_len, bufsiz - buf_len, "        ");
+            buf_len += snprintf(buf + buf_len, bufsiz - buf_len,
+                                "%-9ld %-9ld %-9ld %-9ld %-9s", curmsg->nb_recv,
+                                curmsg->nb_recv_retrans, curmsg->nb_timeout,
+                                curmsg->nb_unexp,
+                                (lose_packets && curmsg->nb_lost)
+                                    ? std::to_string(curmsg->nb_lost).c_str()
+                                    : "");
+            //printf("[TESTDEBUG]draw_scenario_screen??MSG_TYPE_MBCP_RECV (%s %d)\n", __func__ , __LINE__);
         }
         else {
             ERROR("Scenario command not implemented in display");

@@ -125,9 +125,8 @@ Content-Type: application/vnd.3gpp.mcptt-info+xml
   <mbcp_recv Message="TAKEN">
   </mbcp_recv>
   <mbcp_send Message="REVOKE"
-        strRejectCAuse="test">
+        strRejectCause="test">
   </mbcp_send>
-
   
   <recv request="BYE">
   </recv>
