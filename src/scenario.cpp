@@ -32,6 +32,7 @@
 #include "sipp.hpp"
 #include "mbcp.hpp"
 #include "mbcp_factory.hpp"
+#include "SimpleTcpSocket.hpp"
 #ifdef HAVE_GSL
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
@@ -43,9 +44,11 @@
 
 message::message(int index, const char *desc)
 {
+    tcp_screen_name = NULL;
     send_mbcp = NULL;
+    tcp_sock = NULL;
+    tcp_sock_scenario.clear();
     recv_mbcp_request = NULL;
-    send_mbcp_request = NULL;
     this->index = index;
     this->desc = desc;
     pause_distribution = NULL; // delete on exit
@@ -114,17 +117,30 @@ message::message(int index, const char *desc)
     response_txn = 0;
     ack_txn = 0;
     recv_response_for_cseq_method_list = NULL; // free on exit
-
-    send_mbcp = NULL;
 }
 
 message::~message()
 {
-    free(send_mbcp_request);
-    delete(pause_distribution);
-    free(pause_desc);
-    delete(send_scheme);
+    printf("[TESTDEBUG] ~message (%s %d)\n", __func__, __LINE__);
+    for (vector<SimpleSocketScenario *>::iterator i = tcp_sock_scenario.begin(); i != tcp_sock_scenario.end(); i++) {
+        delete *i;
+    }
+    printf("[TESTDEBUG] ~message (%s %d)\n", __func__, __LINE__);
+    tcp_sock_scenario.clear();
+    printf("[TESTDEBUG] ~message (%s %d)\n", __func__, __LINE__);
+    if(tcp_screen_name)
+        free(tcp_screen_name);
+    printf("[TESTDEBUG] ~message (%s %d)\n", __func__, __LINE__);
     delete(send_mbcp);
+    printf("[TESTDEBUG] ~message (%s %d)\n", __func__, __LINE__);
+    delete(tcp_sock);
+    printf("[TESTDEBUG] ~message (%s %d)\n", __func__, __LINE__);
+    delete(pause_distribution);
+    printf("[TESTDEBUG] ~message (%s %d)\n", __func__, __LINE__);
+    free(pause_desc);
+    printf("[TESTDEBUG] ~message (%s %d)\n", __func__, __LINE__);
+    delete(send_scheme);
+    printf("[TESTDEBUG] ~message (%s %d)\n", __func__, __LINE__);
     free(recv_request);
     if (regexp_compile != NULL) {
         regfree(regexp_compile);
@@ -141,6 +157,7 @@ message::~message()
     delete(M_actions);
     delete(M_sendCmdData);
     free(recv_response_for_cseq_method_list);
+    printf("[TESTDEBUG] ~message (%s %d)\n", __func__, __LINE__);
 }
 
 /******** Global variables which compose the scenario file **********/
@@ -749,6 +766,105 @@ scenario::scenario(char * filename, int deflt)
             curmsg->M_type = MSG_TYPE_MBCP_RECV;
             free(ptr);
         }
+        else if(!strcmp(elem, "tcp_connect")){
+            message *curmsg = new message(messages.size(), name ? name : "unknown scenario");
+            messages.push_back(curmsg);
+
+            char *ip = xp_get_string("ip", "tcp connect ip");
+            char *port = xp_get_string("port", "tcp connect port");
+            char *connection_name = xp_get_string("connection_name", "tcp's unique name");
+            char *screen_name = xp_get_string("screen_name", "for screen");
+            
+            SimpleTcpSocket *tcp_sock = new SimpleTcpSocket(ip, atoi(port), 1, connection_name);
+
+            curmsg->M_type = MSG_TYPE_TCP_CONNECT;
+            curmsg->tcp_sock = tcp_sock;
+            curmsg->tcp_screen_name = (char*)malloc(sizeof(char) * strlen(screen_name)+1);
+            strcpy(curmsg->tcp_screen_name, screen_name);
+
+            free(ip);
+            free(port);
+            free(connection_name);
+            free(screen_name);
+
+        }
+        else if(!strcmp(elem, "tcp_send")){
+            char *connection_name = xp_get_string("connection_name", "tcp's unique name");
+            msgvec::iterator i;
+            for (i = messages.begin(); i != messages.end(); i++) {
+                if((*i)->M_type==MSG_TYPE_TCP_CONNECT){
+                    printf("MSG_TYPE_TCP_CONNECT !! Same!\n");
+                    if((*i)->tcp_sock == NULL || (*i)->tcp_sock->nSocket <= 0) continue;
+                    if((*i)->tcp_sock->strName == connection_name){
+                        break;
+                    }
+                }
+            }
+            if(i == messages.end()) ERROR("%s is missing tcp_connect name", name);
+            free(connection_name);
+
+            message *curmsg = new message(messages.size(), name ? name : "unknown scenario");
+            messages.push_back(curmsg);
+
+            curmsg->M_type = MSG_TYPE_TCP_SEND;
+            curmsg->tcp_sock = (*i)->tcp_sock;
+
+            char *screen_name = xp_get_string("screen_name", "for screen");
+            curmsg->tcp_screen_name = (char*)malloc(sizeof(char) * strlen(screen_name) + 1);
+            strcpy(curmsg->tcp_screen_name, screen_name);
+            free(screen_name);
+
+            int nop_cursor = 0;
+            char *initelem = NULL;
+            while ((initelem = xp_open_element(nop_cursor++))){
+                printf("for.. initelem = xp_open_element\n");
+                if (!strcmp(initelem, "message")){
+                    char *type = xp_get_string("type", "message's type");
+                    char *value = xp_get_string("value", "message's value");
+                    char *buffer = NULL;
+                    int buffer_len = 0;
+                    if(!strcmp(type, "string")){
+                        std::string temp(value);
+                        printf("message search.. type=%s, value=%s\n", type, value);
+
+                        std::string from("[pgw2_r_call_id]");
+                        std::string to = std::to_string(pgw2_r_call_id);
+                        
+                        size_t start_pos = 0;
+                        while((start_pos = temp.find(from, start_pos)) != std::string::npos)  //from을 찾을 수 없을 때까지
+                        {
+                            temp.replace(start_pos, from.length(), to);
+                            start_pos += to.length(); // 중복검사를 피하고 from.length() > to.length()인 경우를 위해서
+                        }
+
+                        buffer_len = sizeof(char) * temp.length();
+                        buffer = (char *)malloc(buffer_len);
+                        memcpy(buffer, temp.c_str(), buffer_len);
+                        printf("[TESTDEBUG]message search.. type=%s, value=%s, len=%d, buffer_len=%d, strValue=%s\n", type, value, temp.length(), buffer_len, temp.c_str());
+                    }
+                    else if(!strcmp(type, "int")){
+                        printf("message search.. type=%s, value=%d\n", type, value);
+                        int temp = atoi(value);
+                        buffer_len = sizeof(int);
+                        buffer = (char *)malloc(buffer_len);
+                        memcpy(buffer, &temp, buffer_len);
+                        
+                    }
+                    printf("message search.. buflen=%d\n", buffer_len);
+                    SimpleSocketScenario *tcp_scenario = new SimpleSocketScenario();
+                    printf("Init start? buffer=%s\n", buffer);
+                    tcp_scenario->Init(type, buffer, buffer_len);
+                    curmsg->tcp_sock_scenario.push_back(tcp_scenario);
+                    printf("curmsg->tcp_sock_scenario[0]->szBuf=%s\n", curmsg->tcp_sock_scenario[0]->szBuf);
+                    
+                }
+                else{
+                    ERROR("Invalid element in an init stanza: '%s'", initelem);
+                }
+                xp_close_element();
+            }
+            printf("for.. initelem = xp_open_element end..\n");
+        }
         else if(!strcmp(elem, "CallLengthRepartition")) {
             ptr = xp_get_string("value", "CallLengthRepartition");
             stats->setRepartitionCallLength(ptr);
@@ -844,7 +960,7 @@ scenario::scenario(char * filename, int deflt)
             messages.push_back(curmsg);
 
             if(!strcmp(elem, "send")) {
-                printf("[TESTDEBBUG] Scenario Send... messages=%p\n", &messages);
+                //printf("[TESTDEBBUG] Scenario Send... messages=%p\n", &messages);
                 checkOptionalRecv(elem, scenario_file_cursor);
                 curmsg->M_type = MSG_TYPE_SEND;
                 /* Sent messages descriptions */
@@ -952,7 +1068,6 @@ scenario::scenario(char * filename, int deflt)
                 }
 
                 curmsg->timeout = xp_get_long("timeout", "message timeout", 0);
-                printf("recv!!?? curmsg->timeout?? %llu\n", curmsg->timeout);
                 /* record the route set  */
                 /* TODO disallow optional and rrs to coexist? */
                 if ((cptr = xp_get_value("rrs"))) {
@@ -1091,10 +1206,8 @@ scenario::scenario(char * filename, int deflt)
 
 void scenario::runInit()
 {
-    printf("scenario::runInit.. \n");
     call *initcall;
     if (initmessages.size() > 0) {
-        printf("initmessages.size() > 0 ??\n");
         initcall = new call(main_scenario, NULL, NULL, "///main-init", 0, false, false, true);
         initcall->run();
     }

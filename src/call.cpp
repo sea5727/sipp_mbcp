@@ -590,17 +590,19 @@ int call::_callDebug(const char *fmt, ...)
 
 call::~call()
 {
-    TRACE_MSG("[TESTDEBUG] call::call destructor\n");
+    TRACE_MSG("[TESTDEBUG] call::~call destructor\n");
+    if(mbcp_socket != NULL && mbcp_socket->nSocket > 0){
+        TRACE_MSG("[TESTDEBUG] call::~call delete mbcp_sock (%s %d)\n", __func__, __LINE__);
+        delete(mbcp_socket);
+    }
     computeStat(CStat::E_ADD_CALL_DURATION, clock_tick - start_time);
 
     if(comp_state) {
         comp_free(&comp_state);
     }
-
     if (call_remote_socket && (call_remote_socket != main_remote_socket)) {
         call_remote_socket->close();
     }
-
     /* Deletion of the call variable */
     if(M_callVariableTable) {
         M_callVariableTable->putTable();
@@ -611,14 +613,12 @@ call::~call()
     if (userId) {
         CallGenerationTask::free_user(userId);
     }
-
     if (transactions) {
         for (unsigned int i = 0; i < call_scenario->transactions.size(); i++) {
             free(transactions[i].txnID);
         }
         free(transactions);
     }
-
     if (last_recv_msg) {
         free(last_recv_msg);
     }
@@ -655,7 +655,6 @@ call::~call()
         pthread_join(media_thread, NULL);
     }
 #endif
-
 
     free(start_time_rtd);
     free(rtd_done);
@@ -1352,7 +1351,6 @@ bool call::executeMessage(message *curmsg)
         TRACE_MSG("next().. (%s %d)\n", __func__, __LINE__);
         return(next());
     } else if(curmsg -> M_type == MSG_TYPE_NOP) {
-        printf("MSG_TYPE_NOP\n");
         callDebug("Executing NOP at index %d.\n", curmsg->index);
         do_bookkeeping(curmsg);
         executeAction(NULL, curmsg);
@@ -1487,17 +1485,14 @@ bool call::executeMessage(message *curmsg)
     } else if (curmsg->M_type == MSG_TYPE_RECV
                || curmsg->M_type == MSG_TYPE_RECVCMD
               ) {
-        printf("MSG_TYPE_RECV\n");
         //TESTDEBUG scenario recv
         if (queued_msg) {
-            printf("<recv> .. queued msg?\n");
             char *msg = queued_msg;
             queued_msg = NULL;
             bool ret = process_incoming(msg);
             free(msg);
             return ret;
         } else if (recv_timeout) {
-            printf("<recv> .. recv_timeout?\n");
             if(recv_timeout > getmilliseconds()) {
                 setPaused();
                 return true;
@@ -1534,7 +1529,6 @@ bool call::executeMessage(message *curmsg)
                 return false;
             }
         } else if (curmsg->timeout || defl_recv_timeout) {
-            printf("<recv> .. curmsg->timeout ?\n");
             if (curmsg->timeout)
                 // If timeout is specified on message receive, use it
                 recv_timeout = getmilliseconds() + curmsg->timeout;
@@ -1545,20 +1539,38 @@ bool call::executeMessage(message *curmsg)
         } else {
             TRACE_MSG("[TESTDEBUG]<recv> else?\n");
             /* We are going to wait forever. */
-            printf("setPaused??\n");
             setPaused();
         }
     } else if(curmsg->M_type == MSG_TYPE_MBCP_SEND){
         //TESTDEBUG.. script 실행
         curmsg->send_mbcp->Encode();
         char szLogBuf[8096] = "";
-        TRACE_MSG("[TESTDEBUG] script MBCP SEND.. mbcp_local_port=%d, mbcp_remote_port=%d..\n%s\n%s\n", 
-            this->mbcp_local_port, 
-            this->mbcp_remote_port, 
-            curmsg->send_mbcp->GetDump().c_str(), 
-            curmsg->send_mbcp->DumpMsgBicode(szLogBuf, curmsg->send_mbcp->pcBuf, curmsg->send_mbcp->nBufLen));
 
-        this->mbcp_socket->Sendto(remote_host, this->mbcp_remote_port, curmsg->send_mbcp->pcBuf, curmsg->send_mbcp->nBufLen);
+
+        int ret = this->mbcp_socket->Sendto(remote_host, this->mbcp_remote_port, curmsg->send_mbcp->pcBuf, curmsg->send_mbcp->nBufLen);
+        if(ret > 0){
+            TRACE_MSG("[TESTDEBUG] script MBCP SEND.. ret=%d, sock=%d, remote_host=%s mbcp_local_port=%d, mbcp_remote_port=%d..\n%s\n%s\n", 
+                ret,
+                this->mbcp_socket->nSocket,
+                remote_host,
+                this->mbcp_local_port, 
+                this->mbcp_remote_port, 
+                curmsg->send_mbcp->GetDump().c_str(), 
+                curmsg->send_mbcp->DumpMsgBicode(szLogBuf, curmsg->send_mbcp->pcBuf, curmsg->send_mbcp->nBufLen));
+            TRACE_MSG("mbcp send success.. count =%d.. (%s %d)\n", curmsg->nb_sent, __func__, __LINE__);
+            curmsg->nb_sent++;
+            TRACE_MSG("mbcp send success.. count =%d.. (%s %d)\n", curmsg->nb_sent, __func__, __LINE__);
+        }
+        else {
+            TRACE_MSG("[TESTDEBUG] script MBCP SEND..ret=%d sock=%d, remote_host=%s mbcp_local_port=%d, mbcp_remote_port=%d..\n%s\n%s\n", 
+                ret,
+                this->mbcp_socket->nSocket,
+                remote_host,
+                this->mbcp_local_port, 
+                this->mbcp_remote_port, 
+                curmsg->send_mbcp->GetDump().c_str(), 
+                curmsg->send_mbcp->DumpMsgBicode(szLogBuf, curmsg->send_mbcp->pcBuf, curmsg->send_mbcp->nBufLen));
+        }
         TRACE_MSG("next().. (%s %d)\n", __func__, __LINE__);
         return next();
     } else if(curmsg->M_type == MSG_TYPE_MBCP_RECV) {
@@ -1568,9 +1580,7 @@ bool call::executeMessage(message *curmsg)
         setPaused();
         //return next();
     } else if(curmsg->M_type == MSG_TYPE_TCP_CONNECT) {
-        printf("curmsg->M_type == MSG_TYPE_TCP_CONNECT..\n");
         int ret = curmsg->tcp_sock->Connect();
-        printf("connect ret = %d\n", ret);
         if(ret < 0){
             ERROR("TCP CONNECT FAIL socket:%s ip:%s, port:%s name:%s\n", 
                 curmsg->tcp_sock->nSocket, 
@@ -1599,13 +1609,6 @@ bool call::executeMessage(message *curmsg)
                 curmsg->tcp_sock->strName.c_str(),
                 szBuf, pLen);
         }
-        printf("TCP SEND FAIL ret=%d, socket:%d ip:%s, port:%d name:%s, szBuf=%s, pLen=%d\n", 
-                ret,
-                curmsg->tcp_sock->nSocket, 
-                curmsg->tcp_sock->getIp(),
-                curmsg->tcp_sock->getPort(),
-                curmsg->tcp_sock->strName.c_str(),
-                szBuf, pLen);
         return next();
     }
     else {
@@ -1617,7 +1620,6 @@ bool call::executeMessage(message *curmsg)
 
 bool call::run()
 {
-    printf("call::run\n");
     bool            bInviteTransaction = false;
 
     assert(running);
@@ -2878,9 +2880,9 @@ bool call::mbcp_incoming(MBCP *mbcp, const struct sockaddr_storage* src){
         mbcp->pstMsg.nMsgName,
         mbcp->nMsgName,
         mbcp->StrMbcpSubType(mbcp->pstMsg.nMsgName));
-
+    message *curmsg = NULL;
     for(int i = 0; i < call_scenario->messages.size() ; i++){
-        message *curmsg = call_scenario->messages[i];
+        curmsg = call_scenario->messages[i];
         if(curmsg != NULL){
             TRACE_MSG("[TESTDEBUG] index:%d mbcp_incoming.. recvmsg:%s\n", i, curmsg->recv_mbcp_request);
             TRACE_MSG("[TESTDEBUG] index:%d mbcp_incoming.. sendmsg?%p\n", i, curmsg->send_mbcp);
@@ -2896,7 +2898,12 @@ bool call::mbcp_incoming(MBCP *mbcp, const struct sockaddr_storage* src){
     if(!strcmp(scen_msg->recv_mbcp_request, mbcp->StrMbcpSubType2(mbcp->nMsgName))){
         TRACE_MSG("scen_msg?? : %p\n", scen_msg);
         TRACE_MSG("mbcp scenario matching! success go next %s\n", scen_msg->recv_mbcp_request);
-        return next();
+        scen_msg->nb_recv++;
+        next();
+        paused_until = 0;
+        setRunning();
+        return run();
+
     }
     else {
         TRACE_MSG("scen_msg?? else : %p\n", scen_msg);
@@ -3218,6 +3225,7 @@ bool call::process_incoming(const char* msg, const struct sockaddr_storage* src)
             } else {
                 // call aborted by automatic response mode if needed
                 return automaticResponseMode(L_case, msg);
+                TRACE_MSG("automaticResponseMode end? (%s %d)\n", __func__, __LINE__);
             }
         }
     }
@@ -4147,11 +4155,13 @@ bool call::automaticResponseMode(T_AutoMode P_case, const char* P_recv)
         if (default_behaviors & DEFAULT_BEHAVIOR_ABORTUNEXP) {
             WARNING("Aborting call on an unexpected BYE for call: %s", (id==NULL)?"none":id);
             if (default_behaviors & DEFAULT_BEHAVIOR_BYE) {
+                TRACE_MSG("BYE? (%s %d)\n", __func__, __LINE__);
                 sendBuffer(createSendingMessage(get_default_message("200"), -1));
             }
 
             // if twin socket call => reset the other part here
             if (twinSippSocket && (msg_index > 0)) {
+                TRACE_MSG("BYE? (%s %d)\n", __func__, __LINE__);
                 res = sendCmdBuffer(createSendingMessage(get_default_message("3pcc_abort"), -1));
                 if (res) {
                     WARNING("sendCmdBuffer returned %d", res);
@@ -4160,7 +4170,9 @@ bool call::automaticResponseMode(T_AutoMode P_case, const char* P_recv)
             }
             computeStat(CStat::E_CALL_FAILED);
             computeStat(CStat::E_FAILED_UNEXPECTED_MSG);
+            TRACE_MSG("delete this? start (%s %d)\n", __func__, __LINE__);
             delete this;
+            TRACE_MSG("delete this? end (%s %d)\n", __func__, __LINE__);
         } else {
             WARNING("Continuing call on an unexpected BYE for call: %s", (id==NULL)?"none":id);
         }

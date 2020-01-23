@@ -31,6 +31,7 @@
 #include "message.hpp"
 #include "stat.hpp"
 #include "mbcp.hpp"
+#include "SimpleTcpSocket.hpp"
 
 
 #define MSG_TYPE_SENDCMD   0
@@ -43,6 +44,8 @@
 
 #define MSG_TYPE_MBCP_SEND 101
 #define MSG_TYPE_MBCP_RECV 102
+#define MSG_TYPE_TCP_CONNECT 103
+#define MSG_TYPE_TCP_SEND 104
 #define MODE_CLIENT        0
 #define MODE_SERVER        1
 
@@ -81,6 +84,10 @@ public:
     /* should collect authentication info? */
     bool           bShouldAuthenticate;
 
+    /* If this is tcp scenario*/
+    char *tcp_screen_name;
+    SimpleTcpSocket *tcp_sock;
+    vector<SimpleSocketScenario *> tcp_sock_scenario;
     /* If this is mbcp send*/
     MBCP           *send_mbcp;
     char           *send_mbcp_request;

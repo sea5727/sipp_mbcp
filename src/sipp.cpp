@@ -165,6 +165,7 @@ struct sipp_option options_table[] = {
         , SIPP_OPTION_TRANSPORT, NULL, 1
     },
     {"mbcp_start_port", "Set the mbcp start port number. Default is 20000.", SIPP_OPTION_INT, &mbcp_start_port, 1},
+    {"pgw2_r_call_id", "Set the pgw2 call id", SIPP_OPTION_INT, &pgw2_r_call_id, 0},
     {"i", "Set the local IP address for 'Contact:','Via:', and 'From:' headers. Default is primary host IP address.\n", SIPP_OPTION_IP, local_ip, 1},
     {"p", "Set the local port number.  Default is a random free port chosen by the system.", SIPP_OPTION_INT, &user_port, 1},
     {"bind_local", "Bind socket to local IP address, i.e. the local IP address is used as the source IP address.  If SIPp runs in server mode it will only listen on the local IP address instead of all IP addresses.", SIPP_OPTION_SETFLAG, &bind_local, 1},

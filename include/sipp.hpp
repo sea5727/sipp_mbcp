@@ -181,7 +181,7 @@ cmd messages are received */
 
 extern std::atomic<int>         mbcp_port;
 MAYBE_EXTERN int                mbcp_start_port            DEFVAL(20000);
-
+MAYBE_EXTERN int                pgw2_r_call_id            DEFVAL(0);
 MAYBE_EXTERN int                duration                DEFVAL(0);
 MAYBE_EXTERN double             rate                    DEFVAL(DEFAULT_RATE);
 MAYBE_EXTERN double             rate_scale              DEFVAL(DEFAULT_RATE_SCALE);
